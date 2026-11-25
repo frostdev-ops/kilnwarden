@@ -41,6 +41,6 @@ No requirement for players: tick "server only" if the form has it; the file is f
 
 - Image URLs in the description are `TODO-upload:` placeholders: upload the images (gallery or frostdev.io) and paste
   their URLs.
-- The README, the description and the changelog post say "Open web panel" needs "a coming Kiln update" (today's
+- The README, the description and the changelog post say "Open web panel" needs Kiln 0.2.0-dev.31.14 or newer (today's
   launchers look for the old id): once that update ships, say the button works.
 - Hosted access is written as "coming soon": change it when the relay and the claim pages are announced.

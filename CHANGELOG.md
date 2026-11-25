@@ -17,7 +17,7 @@ Test builds called this mod Kiln Web Admin (mod id `kiln-webadmin`). It is **Kil
 - The console commands are `kilnwarden setup`, `kilnwarden status` and `kilnwarden claim`; `webadmin ...` still works.
 - The extension API is `Kilnwarden.Api.dll` (namespace `Kilnwarden.Api`), still version 1.0.0.
 - A one-time login from a Kiln Launcher minted for the old id still works. Today's Kiln Launchers look for the old id,
-  so their "Open web panel" button shows for Kilnwarden only after a coming Kiln update.
+  so their "Open web panel" button shows for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon).
 
 ### The panel
 - A full admin panel served over HTTPS from inside the dedicated server: no extra program to run, and it answers only

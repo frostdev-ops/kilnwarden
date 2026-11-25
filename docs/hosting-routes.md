@@ -19,7 +19,7 @@ Hosted access never decrypts: the relay reads only the name your browser asks fo
 name) and passes the encrypted bytes on. TLS ends inside your game server, with the panel's own Let's Encrypt
 certificate for `<name>.kiln.nexus`, whose key never leaves the server.
 
-**The Kiln Launcher's "Open web panel"** (sections 2A and 2C) shows for Kilnwarden after a coming Kiln update:
+**The Kiln Launcher's "Open web panel"** (sections 2A and 2C) shows for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon):
 today's launchers look for the mod's old name. Until then, use the setup link from `kiln.log` and an SSH tunnel.
 
 ## 1. A rented game server (FTP and the host's web console): hosted access (coming soon)
@@ -141,7 +141,7 @@ others.
 
 ### A. The Kiln Launcher over SSH (nothing open but SSH)
 
-This needs a coming Kiln update (today's launchers look for the mod's old name). Add the server to the launcher with its SSH connection (the launcher needs `kilnctl` on the server). **Servers >
+This needs Kiln 0.2.0-dev.31.14 or newer (coming soon; earlier launchers look for the mod's old name). Add the server to the launcher with its SSH connection (the launcher needs `kilnctl` on the server). **Servers >
 (your server) > Open web panel** tunnels to the panel's loopback port over SSH, pins its certificate, and signs you
 in as the owner (before any owner exists, it opens the setup page straight away). The panel can stay on `127.0.0.1`; no port, no certificate, no
 domain. Only you, through the launcher, reach it.

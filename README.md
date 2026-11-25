@@ -77,7 +77,7 @@ have an owner account.
 
 **With the Kiln Launcher**, **Servers > (your server) > Open web panel** opens the panel and signs you in as the owner,
 for a local server and for a remote one over its SSH connection. Before an owner exists, it opens the setup page.
-The button only shows for Kilnwarden after a coming Kiln update: today's launchers look for the mod's old name.
+The button shows for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon): earlier launchers look for the mod's old name.
 Until then, use the setup link from `kiln.log`.
 
 No browser on the server's machine, for example a rented game server with FTP only? See the table below.
@@ -96,7 +96,7 @@ may see.
 | **Docker or Pterodactyl** | A published port (an allocation) with `bind` set to `0.0.0.0` inside the container, or hosted access (coming soon) | One more TCP port, or outbound HTTPS only; the data folder on the persistent volume |
 | **Behind CGNAT, or IPv6 only** | Hosted access (coming soon). With IPv6 only, a direct IPv6 address also works, but IPv4-only visitors can't reach it. | Outbound HTTPS (IPv4 or IPv6) |
 
-The Kiln Launcher routes need a coming Kiln update (see Install). You can also put the panel behind your own reverse
+The Kiln Launcher routes need Kiln 0.2.0-dev.31.14 or newer (coming soon; see Install). You can also put the panel behind your own reverse
 proxy: turn its TLS off and mark the proxy as trusted.
 
 For the first sign-in on a server you can only reach over FTP, the setup link is in `kiln/logs/kiln.log`, or comes

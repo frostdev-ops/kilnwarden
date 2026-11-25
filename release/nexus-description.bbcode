@@ -5,7 +5,7 @@
 
 [size=2][b][color=#F9C74F]NEEDS KILN 0.2.0-dev.31.10+[/color]  [color=#71717A]◆[/color]  [color=#F9C74F]DEDICATED SERVER ONLY[/color]  [color=#71717A]◆[/color]  [color=#F9C74F]PLAYERS NEED NOTHING[/color]  [color=#71717A]◆[/color]  [color=#F9C74F]MIT[/color][/b][/size][/center]
 
-[center][img]TODO-upload:art/nexus_main_1280x720.png[/img][/center]
+[center][img]https://raw.githubusercontent.com/frostdev-ops/kilnwarden/main/art/nexus_main_1280x720.png[/img][/center]
 
 [center][url=https://discord.gg/7pjr8SMTfU][img]https://frostdev.io/kiln/discord-banner.png[/img][/url]
 [size=2][color=#A1A1AA]Questions, bug reports and ideas: the Kiln Discord.[/color][/size][/center]
@@ -26,7 +26,7 @@
 [*][size=3][color=#D4D4D8][b]A public page if you want one:[/b] online or not, player count, a map with rough player dots, your rules and how to join. Off until you turn it on, each part on its own switch.[/color][/size][/*]
 [*][size=3][color=#D4D4D8][b]Your look:[/b] your server's name, colour, logo and favicon.[/color][/size][/*]
 [/list]
-[center][img]TODO-upload:art/screens/commands.png[/img]
+[center][img]https://raw.githubusercontent.com/frostdev-ops/kilnwarden/main/art/screens/commands.png[/img]
 [size=2][color=#A1A1AA]Every command as a form (demo data).[/color][/size][/center]
 [line]
 [size=5][b][color=#FF6A1A]Installation[/color][/b][/size]
@@ -37,12 +37,12 @@
 [*][size=3][color=#D4D4D8]On the server's machine, open the setup link and create your owner account. The first certificate is self-signed: check that the fingerprint your browser shows is the one in kiln.log.[/color][/size][/*]
 [*][size=3][color=#D4D4D8]Turn on two-factor sign-in in [b]My account[/b], and add your helpers in [b]Users and roles[/b].[/color][/size][/*]
 [/list]
-[size=3][color=#D4D4D8]The panel only answers on the server's own machine until you change that in [b]Panel settings[/b], so nobody else can reach it before you have an owner account. After a coming Kiln update, the Kiln Launcher opens it for you with [b]Open web panel[/b] on your server's page, also for a remote server over SSH. Today's launchers look for the mod's old name, so the button doesn't show for Kilnwarden yet.[/color][/size]
+[size=3][color=#D4D4D8]The panel only answers on the server's own machine until you change that in [b]Panel settings[/b], so nobody else can reach it before you have an owner account. From Kiln 0.2.0-dev.31.14 (coming soon), the Kiln Launcher opens it for you with [b]Open web panel[/b] on your server's page, also for a remote server over SSH. Today's launchers look for the mod's old name, so the button doesn't show for Kilnwarden yet.[/color][/size]
 
 [size=4][b][color=#F9C74F]Pick your route[/color][/b][/size]
 [list]
-[*][size=3][color=#D4D4D8][b]Home PC or LAN:[/b] open it on the server's machine, or with the Kiln Launcher (after a coming Kiln update). For other devices at home, set the bind address in Panel settings and add an IP allowlist for your network.[/color][/size][/*]
-[*][size=3][color=#D4D4D8][b]VPS or cloud machine:[/b] the Kiln Launcher over SSH (nothing open but SSH; after a coming Kiln update), or your own address: open the port and get a free Let's Encrypt certificate from the panel (HTTP-01 on port 80 or TLS-ALPN-01 on port 443), or use your own certificate files. A free dynamic DNS name works.[/color][/size][/*]
+[*][size=3][color=#D4D4D8][b]Home PC or LAN:[/b] open it on the server's machine, or with the Kiln Launcher (needs Kiln 0.2.0-dev.31.14 or newer, coming soon). For other devices at home, set the bind address in Panel settings and add an IP allowlist for your network.[/color][/size][/*]
+[*][size=3][color=#D4D4D8][b]VPS or cloud machine:[/b] the Kiln Launcher over SSH (nothing open but SSH; needs Kiln 0.2.0-dev.31.14 or newer, coming soon), or your own address: open the port and get a free Let's Encrypt certificate from the panel (HTTP-01 on port 80 or TLS-ALPN-01 on port 443), or use your own certificate files. A free dynamic DNS name works.[/color][/size][/*]
 [*][size=3][color=#D4D4D8][b]Rented game server[/b] (FTP and a web console only): the setup link is in kiln.log, or comes from the console command [b]kilnwarden setup[/b] through Kiln's console folder over FTP. With one extra port from your host, use direct HTTPS (self-signed). Otherwise, hosted access (coming soon, below).[/color][/size][/*]
 [*][size=3][color=#D4D4D8][b]Docker or Pterodactyl:[/b] a published port (an allocation) with [b]bind[/b] set to 0.0.0.0 in settings.json, and the data folder on the persistent volume. Or hosted access (coming soon).[/color][/size][/*]
 [*][size=3][color=#D4D4D8][b]Behind CGNAT, or IPv6 only:[/b] hosted access (coming soon). With IPv6 only, a direct IPv6 address works too, but IPv4-only visitors can't reach it.[/color][/size][/*]

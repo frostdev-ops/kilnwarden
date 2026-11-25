@@ -258,7 +258,7 @@ Not a hosted-service protocol, but the launcher integration depends on it:
   `POST /api/auth/launcher`; the mod redeems it with `login_redeem` for `kilnwarden`, and once more for the old id
   `kiln-webadmin` when Kiln.Admin refuses the first (launchers made before the rename mint for that id).
 - Kiln Launchers released so far look for the old id (`kiln-webadmin`) and its data folder, so "Open web panel" shows
-  for Kilnwarden only after a coming Kiln update.
+  for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon).
 
 ## 8. Trust, in short
 
