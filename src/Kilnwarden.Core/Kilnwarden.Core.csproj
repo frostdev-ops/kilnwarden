@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The mod's engine with no Kiln reference: HTTP/WebSocket server, TLS, config, storage, module registry, router,
+       static files. Tested offline (tests/Offline) and fuzzed (tests/Fuzz) without a game; the mod project
+       (src/Kilnwarden) wires it to Kiln. Only Microsoft.NETCore.App (owner decision): no package references here. -->
+  <PropertyGroup>
+    <AssemblyName>$(WebAdminNamespace).Core</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace)</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(WebAdminNamespace).Offline" />
+    <InternalsVisibleTo Include="$(WebAdminNamespace).Fuzz" />
+    <InternalsVisibleTo Include="$(WebAdminNamespace)" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the public extension API (the mod's export): the engine implements it (Extensions/) -->
+    <ProjectReference Include="../Kilnwarden.Api/Kilnwarden.Api.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the page served while no web app is built into the mod folder (web/index.html) -->
+    <EmbeddedResource Include="Static/placeholder/*" LogicalName="placeholder/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(WebAdminBrokerPins)" LogicalName="webadmin-broker-pins.json"
+                      Condition="'$(WebAdminBrokerPins)' != ''" />
+  </ItemGroup>
+</Project>

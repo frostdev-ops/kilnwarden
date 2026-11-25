@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The panel without the game (tools/devhost/Program.cs): the web app's development and end-to-end tests. Not shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>$(WebAdminNamespace).DevHost</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace).DevHost</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Kilnwarden.Core/Kilnwarden.Core.csproj" />
+  </ItemGroup>
+</Project>

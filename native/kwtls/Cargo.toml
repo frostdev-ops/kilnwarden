@@ -1,0 +1,23 @@
+# kwtls: the web admin's TLS engine (owner decision 2026-11-23): rustls + ring behind a small C ABI. The managed side
+# (src/Kilnwarden.Core/Tls/Kwtls*.cs) owns the sockets and moves ciphertext in and out; this library never does I/O.
+# Its file is kwtls-<version>.dll (a native DLL stays loaded across hot reloads, so a new build needs a new name):
+# version below = KwtlsVersion in Directory.Build.props (a test checks). Build: ./build.sh
+[package]
+name = "kwtls"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

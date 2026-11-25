@@ -1,0 +1,261 @@
+// Kilnwarden.Api 1.0.0
+sealed class Kilnwarden.Api.ActionContext
+  ctor()
+  prop Kilnwarden.Api.WebAdminUser User { get; init; }
+  prop System.String Action { get; init; }
+  prop System.String Module { get; init; }
+  prop System.Text.Json.Nodes.JsonObject Args { get; init; }
+  prop System.Threading.CancellationToken Aborted { get; init; }
+sealed class Kilnwarden.Api.ActionDefinition
+  ctor(System.String Name, System.String Permission)
+  method Kilnwarden.Api.ActionDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.ActionDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Name, System.String& Permission)
+  prop Kilnwarden.Api.RunOn RunOn { get; init; }
+  prop System.Collections.Generic.IReadOnlyList`1[System.String] Redact { get; init; }
+  prop System.String Confirm { get; init; }
+  prop System.String Name { get; init; }
+  prop System.String Permission { get; init; }
+  prop System.String Title { get; init; }
+  prop System.Text.Json.Nodes.JsonObject ArgsSchema { get; init; }
+delegate Kilnwarden.Api.ActionHandler
+  ctor(System.Object object, System.IntPtr method)
+  method System.IAsyncResult BeginInvoke(Kilnwarden.Api.ActionContext context, System.AsyncCallback callback, System.Object object)
+  method System.Threading.Tasks.ValueTask`1[System.Text.Json.Nodes.JsonNode] EndInvoke(System.IAsyncResult result)
+  method System.Threading.Tasks.ValueTask`1[System.Text.Json.Nodes.JsonNode] Invoke(Kilnwarden.Api.ActionContext context)
+sealed class Kilnwarden.Api.ButtonBlock : Kilnwarden.Api.PageBlock
+  ctor(System.String Action, System.String Label)
+  method Kilnwarden.Api.ButtonBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.ButtonBlock other)
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Action, System.String& Label)
+  prop System.String Action { get; init; }
+  prop System.String Label { get; init; }
+  prop System.Text.Json.Nodes.JsonObject Args { get; init; }
+sealed class Kilnwarden.Api.CustomPage : Kilnwarden.Api.PageDefinition
+  ctor(System.String Id, System.String Title, System.String Script)
+  method Kilnwarden.Api.CustomPage <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.CustomPage other)
+  method System.Boolean Equals(Kilnwarden.Api.PageDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Id, System.String& Title, System.String& Script)
+  prop System.String Script { get; init; }
+  prop System.String Style { get; init; }
+sealed class Kilnwarden.Api.DeclarativePage : Kilnwarden.Api.PageDefinition
+  ctor(System.String Id, System.String Title, System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.PageBlock] Blocks)
+  method Kilnwarden.Api.DeclarativePage <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.DeclarativePage other)
+  method System.Boolean Equals(Kilnwarden.Api.PageDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Id, System.String& Title, System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.PageBlock]& Blocks)
+  prop System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.PageBlock] Blocks { get; init; }
+sealed class Kilnwarden.Api.FormBlock : Kilnwarden.Api.PageBlock
+  ctor(System.String Action)
+  method Kilnwarden.Api.FormBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.FormBlock other)
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Action)
+  prop System.String Action { get; init; }
+  prop System.String Submit { get; init; }
+  prop System.String Title { get; init; }
+interface Kilnwarden.Api.IWebAdmin
+  method Kilnwarden.Api.IWebAdminExtension Attach(System.String modId)
+  prop System.String ApiVersion { get; }
+  prop System.String Version { get; }
+interface Kilnwarden.Api.IWebAdminExtension
+  method Kilnwarden.Api.IWebAdminModule RegisterModule(Kilnwarden.Api.ModuleDefinition module)
+  prop System.String ModId { get; }
+interface Kilnwarden.Api.IWebAdminModule
+  method Kilnwarden.Api.IWebAdminSettings`1[T] Settings<T>()
+  method System.Void AddAction(Kilnwarden.Api.ActionDefinition action, Kilnwarden.Api.ActionHandler handler)
+  method System.Void AddPage(Kilnwarden.Api.PageDefinition page)
+  method System.Void AddQuery(Kilnwarden.Api.QueryDefinition query, Kilnwarden.Api.QueryHandler handler)
+  method System.Void AddWidget(Kilnwarden.Api.WidgetDefinition widget)
+  method System.Void Publish(System.String topic, System.Text.Json.Nodes.JsonObject payload)
+  prop System.Boolean Enabled { get; }
+  prop System.String Id { get; }
+interface Kilnwarden.Api.IWebAdminSettings`1
+  event System.Action`1[T] Changed
+  prop T Current { get; }
+sealed class Kilnwarden.Api.ModuleDefinition
+  ctor(System.String Id, System.String Title)
+  method Kilnwarden.Api.ModuleDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.ModuleDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Id, System.String& Title)
+  prop System.Boolean DefaultEnabled { get; init; }
+  prop System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.PermissionDefinition] Permissions { get; init; }
+  prop System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.TopicDefinition] Topics { get; init; }
+  prop System.String Description { get; init; }
+  prop System.String Icon { get; init; }
+  prop System.String Id { get; init; }
+  prop System.String Title { get; init; }
+  prop System.Text.Json.Nodes.JsonObject SettingsSchema { get; init; }
+abstract class Kilnwarden.Api.PageBlock
+  method Kilnwarden.Api.PageBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+abstract class Kilnwarden.Api.PageDefinition
+  method Kilnwarden.Api.PageDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PageDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Id, System.String& Title)
+  prop System.Int32 Order { get; init; }
+  prop System.String Icon { get; init; }
+  prop System.String Id { get; init; }
+  prop System.String Permission { get; init; }
+  prop System.String Title { get; init; }
+sealed class Kilnwarden.Api.PermissionDefinition
+  ctor(System.String Name, System.String Title)
+  method Kilnwarden.Api.PermissionDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PermissionDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Name, System.String& Title)
+  prop Kilnwarden.Api.WebAdminRole DefaultRole { get; init; }
+  prop System.Boolean Sensitive { get; init; }
+  prop System.String Description { get; init; }
+  prop System.String Name { get; init; }
+  prop System.String Title { get; init; }
+sealed class Kilnwarden.Api.QueryContext
+  ctor()
+  prop Kilnwarden.Api.WebAdminUser User { get; init; }
+  prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Parameters { get; init; }
+  prop System.String Module { get; init; }
+  prop System.String Query { get; init; }
+  prop System.Threading.CancellationToken Aborted { get; init; }
+sealed class Kilnwarden.Api.QueryDefinition
+  ctor(System.String Name, System.String Permission)
+  method Kilnwarden.Api.QueryDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.QueryDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Name, System.String& Permission)
+  prop Kilnwarden.Api.RunOn RunOn { get; init; }
+  prop System.String Name { get; init; }
+  prop System.String Permission { get; init; }
+  prop System.String Title { get; init; }
+delegate Kilnwarden.Api.QueryHandler
+  ctor(System.Object object, System.IntPtr method)
+  method System.IAsyncResult BeginInvoke(Kilnwarden.Api.QueryContext context, System.AsyncCallback callback, System.Object object)
+  method System.Threading.Tasks.ValueTask`1[System.Text.Json.Nodes.JsonNode] EndInvoke(System.IAsyncResult result)
+  method System.Threading.Tasks.ValueTask`1[System.Text.Json.Nodes.JsonNode] Invoke(Kilnwarden.Api.QueryContext context)
+enum Kilnwarden.Api.RunOn
+  field const Kilnwarden.Api.RunOn Background = 0
+  field const Kilnwarden.Api.RunOn GameThread = 1
+sealed class Kilnwarden.Api.StatBlock : Kilnwarden.Api.PageBlock
+  ctor(System.String Title, System.String Query, System.String Field)
+  method Kilnwarden.Api.StatBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(Kilnwarden.Api.StatBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Title, System.String& Query, System.String& Field)
+  prop System.String Field { get; init; }
+  prop System.String Query { get; init; }
+  prop System.String Title { get; init; }
+  prop System.String Unit { get; init; }
+sealed class Kilnwarden.Api.TableBlock : Kilnwarden.Api.PageBlock
+  ctor(System.String Query, System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.TableColumn] Columns)
+  method Kilnwarden.Api.TableBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(Kilnwarden.Api.TableBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Query, System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.TableColumn]& Columns)
+  prop System.Collections.Generic.IReadOnlyList`1[Kilnwarden.Api.TableColumn] Columns { get; init; }
+  prop System.String Query { get; init; }
+  prop System.String RowsField { get; init; }
+  prop System.String Title { get; init; }
+sealed class Kilnwarden.Api.TableColumn
+  ctor(System.String Field, System.String Title)
+  method Kilnwarden.Api.TableColumn <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.TableColumn other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Field, System.String& Title)
+  prop System.String Field { get; init; }
+  prop System.String Title { get; init; }
+sealed class Kilnwarden.Api.TextBlock : Kilnwarden.Api.PageBlock
+  ctor(System.String Text)
+  method Kilnwarden.Api.TextBlock <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.PageBlock other)
+  method System.Boolean Equals(Kilnwarden.Api.TextBlock other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Text)
+  prop System.String Text { get; init; }
+sealed class Kilnwarden.Api.TopicDefinition
+  ctor(System.String Name, System.String Permission)
+  method Kilnwarden.Api.TopicDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.TopicDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Name, System.String& Permission)
+  prop System.Boolean Webhooks { get; init; }
+  prop System.Collections.Generic.IReadOnlyList`1[System.String] WebhookFields { get; init; }
+  prop System.String Name { get; init; }
+  prop System.String Permission { get; init; }
+  prop System.String Title { get; init; }
+sealed class Kilnwarden.Api.WebAdminRefusal : System.Exception
+  ctor(System.Int32 status, System.String code, System.String message)
+  prop System.Int32 Status { get; }
+  prop System.String Code { get; }
+enum Kilnwarden.Api.WebAdminRole
+  field const Kilnwarden.Api.WebAdminRole Admin = 2
+  field const Kilnwarden.Api.WebAdminRole Moderator = 1
+  field const Kilnwarden.Api.WebAdminRole Owner = 3
+  field const Kilnwarden.Api.WebAdminRole Viewer = 0
+sealed class Kilnwarden.Api.WebAdminUser
+  ctor(System.String id, System.String name, System.Func`2[System.String,System.Boolean] has)
+  method System.Boolean Has(System.String permission)
+  prop System.String Id { get; }
+  prop System.String Name { get; }
+static class Kilnwarden.Api.WebPanel
+  field const System.String ApiVersion = 1.0.0
+  method static System.Boolean TryGet(Kilnwarden.Api.IWebAdmin& admin)
+  method static System.IDisposable WhenAvailable(System.Action`1[Kilnwarden.Api.IWebAdmin] onAvailable)
+sealed class Kilnwarden.Api.WidgetDefinition
+  ctor(System.String Id, System.String Title, Kilnwarden.Api.WidgetSurface Surface)
+  method Kilnwarden.Api.WidgetDefinition <Clone>$()
+  method System.Boolean Equals(Kilnwarden.Api.WidgetDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(System.String& Id, System.String& Title, Kilnwarden.Api.WidgetSurface& Surface)
+  prop Kilnwarden.Api.WidgetSurface Surface { get; init; }
+  prop System.Func`1[System.Text.Json.Nodes.JsonNode] PublicData { get; init; }
+  prop System.String Field { get; init; }
+  prop System.String Id { get; init; }
+  prop System.String Kind { get; init; }
+  prop System.String Query { get; init; }
+  prop System.String Title { get; init; }
+enum Kilnwarden.Api.WidgetSurface
+  field const Kilnwarden.Api.WidgetSurface Dashboard = 0
+  field const Kilnwarden.Api.WidgetSurface Public = 1

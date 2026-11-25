@@ -1,0 +1,19 @@
+bin/
+obj/
+kiln-sdk
+.nuget-packages/
+dist/
+*.user
+.vs/
+TestResults/
+__pycache__/
+node_modules/
+target/
+native/kwtls/dist/
+*.profraw
+tests/Fuzz/findings/
+# the vendored @kiln/admin-ui build is committed (web/scripts/refresh-admin-ui.sh)
+!web/vendor/admin-ui/dist/
+web/test-results/
+web/playwright-report/
+web/.e2e/

@@ -1,0 +1,52 @@
+<Project>
+  <!-- The mod's names live here and only here (Kilnwarden since 2026-11-25; it was Kiln Web Admin, kiln-webadmin).
+       A rename = these properties + the C# namespaces + the project folders. Code reads the names at run
+       time from Product (src/Kilnwarden.Core/Product.cs), which gets them from the assembly metadata below. -->
+  <PropertyGroup>
+    <WebAdminModId>kilnwarden</WebAdminModId>
+    <WebAdminProductName>Kilnwarden</WebAdminProductName>
+    <WebAdminNamespace>Kilnwarden</WebAdminNamespace>
+    <WebAdminVersion>0.1.0</WebAdminVersion>
+    <!-- The Kiln this mod needs (kiln.mod.json "dependencies"): the release it is built against and tested on. Kiln.Sdk
+         stamps apiVersion 0.2.19 (Kiln 0.2.0-dev.31.9 and later), and Kiln.Admin 30.9 added the KAP ops it uses. -->
+    <WebAdminKilnFloor>0.2.0-dev.31.10</WebAdminKilnFloor>
+    <!-- The Kiln SDK the mod builds against: Kiln.TestKit's version here, Kiln.Sdk's in global.json (msbuild-sdks); keep
+         both the same. tools/link-sdk.sh links kiln-sdk to that release's sdk/ folder. -->
+    <WebAdminKilnSdk>0.2.0-dev.31.10</WebAdminKilnSdk>
+    <!-- The native TLS library's version = its file name kwtls-<version>.dll (a loaded native DLL cannot be unloaded by a
+         hot reload, so every new build needs a new name). Must equal native/kwtls/Cargo.toml's version (a test checks). -->
+    <KwtlsVersion>1.0.0</KwtlsVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Authors>Frostdev</Authors>
+    <Company>Frostdev</Company>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>$(WebAdminVersion)</Version>
+  </PropertyGroup>
+
+  <!-- The shipped assemblies (src/) build the same bytes from any folder, checkout or export, in Release: the checkout's path is mapped to
+       /_/ in source paths and in the PDB path written into each DLL (deterministic compilation is on by default; an
+       export without .git has no SourceRoot, so the mapping is explicit). tools/release/repro.sh checks the whole zip. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and $([MSBuild]::MakeRelative($(MSBuildThisFileDirectory), $(MSBuildProjectDirectory)).Replace('\', '/').StartsWith('src/'))">
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+    <!-- no git queries: a checkout and an export of one commit give the same bytes (no "+commit" in the informational
+         version, no Source Link data that depends on the clone's remote) -->
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <EnableSourceLink>false</EnableSourceLink>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="WebAdmin.ModId" Value="$(WebAdminModId)" />
+    <AssemblyMetadata Include="WebAdmin.ProductName" Value="$(WebAdminProductName)" />
+    <AssemblyMetadata Include="WebAdmin.Version" Value="$(WebAdminVersion)" />
+    <AssemblyMetadata Include="WebAdmin.KwtlsVersion" Value="$(KwtlsVersion)" />
+    <AssemblyMetadata Include="WebAdmin.KilnFloor" Value="$(WebAdminKilnFloor)" />
+  </ItemGroup>
+</Project>

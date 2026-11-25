@@ -1,0 +1,1 @@
+Kilnwarden is a web admin panel for Enshrouded dedicated servers, as a Kiln mod. Run your server from any browser: players, live map, every command as a form, schedules, mod updates, metrics, webhooks, roles with two-factor sign-in and an audit log. It runs inside the server over HTTPS; players need nothing.

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The public extension API (DESIGN §6): the mod's export Kilnwarden.Api.dll (kiln.mod.json "exports"), which other
+       mods compile against and share at run time. BCL only: no Kiln types, no package references. Versioned on its own
+       (WebPanel.ApiVersion); the public surface is pinned by PublicAPI.txt (tests/Offline/Extensions/ApiBaselineTests). -->
+  <PropertyGroup>
+    <AssemblyName>$(WebAdminNamespace).Api</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace).Api</RootNamespace>
+    <!-- the API's own semver, not the mod's -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(WebAdminNamespace).Core" />
+    <InternalsVisibleTo Include="$(WebAdminNamespace).Offline" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="PublicAPI.txt" />
+  </ItemGroup>
+</Project>

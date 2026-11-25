@@ -1,0 +1,21 @@
+/* Lane C (metrics, webhooks, public page, extension pages). Imported by the pages that need it. */
+.wa-chart { margin: 0; min-width: 0; }
+.wa-chart-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.wa-chart-title { font-family: var(--k-font-label); color: var(--k-text-1); }
+.wa-chart-now { margin-left: auto; color: var(--k-text-0); font-variant-numeric: tabular-nums; }
+.wa-chart-box { position: relative; min-height: 160px; }
+.wa-chart-box svg { display: block; touch-action: pan-y; }
+.wa-chart-grid { stroke: var(--k-line); stroke-width: 1; }
+.wa-chart-axis { fill: var(--k-text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.wa-chart-line { fill: none; stroke: #3987e5; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.wa-chart-cross { stroke: var(--k-text-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.wa-chart-dot { fill: #3987e5; stroke: var(--k-bg-2); stroke-width: 2; }
+.wa-chart-tip { position: absolute; top: 4px; width: 140px; pointer-events: none; padding: 6px 8px; border-radius: var(--k-radius-s); background: var(--k-bg-3); border: 1px solid var(--k-line-strong); color: var(--k-text-1); font-size: 12px; }
+.wa-chart-tip strong { color: var(--k-text-0); font-size: 14px; }
+.wa-chart-empty { padding: 48px 0; text-align: center; }
+.wa-chart-table { max-height: 160px; overflow-y: auto; }
+.wa-stat { display: flex; flex-direction: column; gap: 2px; }
+.wa-stat-value { font-size: 28px; color: var(--k-text-0); font-variant-numeric: tabular-nums; }
+.wa-ext-frame { width: 100%; min-height: 320px; border: 1px solid var(--k-line); border-radius: var(--k-radius-m); background: var(--k-bg-1); }
+.wa-check { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.wa-textarea { width: 100%; min-height: 96px; resize: vertical; }

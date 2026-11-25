@@ -1,0 +1,28 @@
+<Project Sdk="Kiln.Sdk">
+  <!-- A sample Kiln mod that adds a module to Kilnwarden through Kilnwarden.Api (DESIGN §6): an action, a
+       sensitive action, a query, a declarative page, a custom (sandboxed) page, a dashboard widget, a public widget, a
+       topic and typed settings. The web admin is an optional dependency: without it the mod loads and does nothing.
+         dotnet build                       the mod folder (bin/<cfg>/net10.0)
+       The API reference is compile-only (Private=false): at run time the assembly is kilnwarden's export. -->
+  <PropertyGroup>
+    <KilnModId>webadmin-sample</KilnModId>
+    <KilnModName>Web Admin sample</KilnModName>
+    <Description>A sample module for Kilnwarden.</Description>
+    <AssemblyName>Kilnwarden.Sample</AssemblyName>
+    <RootNamespace>Kilnwarden.Sample</RootNamespace>
+    <KilnSide>server</KilnSide>
+    <KilnClients>none</KilnClients>
+    <KilnGameIds>None</KilnGameIds>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <KilnDependency Include="kilnwarden" Version="*" Optional="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Kilnwarden.Api/Kilnwarden.Api.csproj" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Kiln's types without a prefix (the namespace used to be Kiln.WebAdmin, inside Kiln) -->
+    <Using Include="Kiln" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in Kilnwarden doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Security problems go in a private report instead (see SECURITY.md), not here.
+        Please never paste passwords, setup links, claim links or files from `kiln/data/kilnwarden/`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Panel settings
+        2. ...
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Kilnwarden and Kiln (both are in kiln/logs/kiln.log).
+      placeholder: Kilnwarden 0.1.0, Kiln 0.2.0-dev.31.10
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Where the server runs
+      options:
+        - Home PC or LAN (Windows)
+        - Home PC or LAN (Linux, Wine or Proton)
+        - VPS or cloud machine
+        - Rented game server (FTP and web console)
+        - Docker or Pterodactyl
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: How you reach the panel
+      options:
+        - Only on the server's machine
+        - Kiln Launcher (Open web panel)
+        - Own address and port (HTTPS)
+        - Behind my reverse proxy
+        - Hosted access (<name>.kiln.nexus, once it opens)
+  - type: textarea
+    id: log
+    attributes:
+      label: kiln.log
+      description: |
+        Attach `kiln/logs/kiln.log` from the server (drag the file here), or paste the lines around the problem.
+        It has no passwords, but it can hold a one-time setup link (`setup#token=`): delete those lines. Check it for
+        anything else you'd rather not share.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: browser
+    attributes:
+      label: Browser and screenshot
+      description: Which browser, and a screenshot if the problem is on a page.

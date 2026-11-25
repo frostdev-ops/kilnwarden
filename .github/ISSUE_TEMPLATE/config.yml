@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://discord.gg/7pjr8SMTfU
+    about: Setting up Kilnwarden or Kiln? Ask on the Kiln Discord.
+  - name: Security problem
+    url: https://github.com/frostdev-ops/kilnwarden/security/advisories/new
+    about: Report it privately, please (see SECURITY.md).

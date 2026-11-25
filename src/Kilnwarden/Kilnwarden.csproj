@@ -1,0 +1,143 @@
+<Project Sdk="Kiln.Sdk">
+  <!-- The Kiln mod: wires the engine (src/Kilnwarden.Core) to the server (data folder, log, tick thread).
+         dotnet build                                                  build (output folder = the mod folder)
+         dotnet build -t:KilnDeploy -p:KilnServer=<lab> [-p:KilnReload=true]
+         dotnet build -t:KilnPack                                      kilnwarden-<version>.zip
+       The mod folder gets kwtls-<KwtlsVersion>.dll and web/ (the web app's build, web/dist). The DLL comes from this repo's
+       own cross-build, native/kwtls/build.sh windows (cargo xwin, static CRT), which writes it with its build manifest
+       kwtls-<KwtlsVersion>.dll.json; KilnDeploy and KilnPack refuse to run without both or when the DLL's sha256 is not
+       the manifest's (KWA002, KWA004, KWA005). -p:WebAdminAllowNoKwtls=true lets KilnDeploy go without it (SslStream
+       fallback checks in a lab); KilnPack never does. -->
+  <PropertyGroup>
+    <KilnModId>$(WebAdminModId)</KilnModId>
+    <KilnModName>$(WebAdminProductName)</KilnModName>
+    <Description>A full admin panel for your Enshrouded server, served over HTTPS from inside the server.</Description>
+    <AssemblyName>$(WebAdminNamespace)</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace)</RootNamespace>
+    <KilnSide>server</KilnSide>
+    <KilnUpdatesRepository>frostdev-ops/kilnwarden</KilnUpdatesRepository>
+    <KilnClients>none</KilnClients>
+    <KilnGameIds>None</KilnGameIds>
+    <!-- Kiln.Chat: the console-only commands kilnwarden setup and kilnwarden status (Kiln's console folder works over FTP) -->
+    <KilnServices>Chat</KilnServices>
+    <!-- the public extension API other mods compile against (DESIGN §6; src/Kilnwarden.Api) -->
+    <KilnExports>$(WebAdminNamespace).Api.dll</KilnExports>
+    <!-- the mod folder gets the engine DLL, not its XML docs -->
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+  <ItemGroup>
+    <KilnDependency Include="kiln" Version="&gt;=$(WebAdminKilnFloor)" />
+    <KilnDependency Include="kiln-admin" Version="*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Kilnwarden.Core/Kilnwarden.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the composed-graph test starts WebAdminMod.Components() -->
+    <InternalsVisibleTo Include="$(WebAdminNamespace).Offline" />
+  </ItemGroup>
+
+  <!-- Lab builds (-p:WebAdminLab=true, never released): Lab/LabProbe.cs with public test routes and step timing for the
+       lab checks (tools/load). KilnPack refuses a lab build. -->
+  <PropertyGroup Condition="'$(WebAdminLab)' == 'true'">
+    <DefineConstants>$(DefineConstants);LAB</DefineConstants>
+  </PropertyGroup>
+
+  <!-- the native TLS engine (Windows build) and the web app -->
+  <PropertyGroup>
+    <_KwtlsDll>$(MSBuildThisFileDirectory)../../native/kwtls/dist/kwtls-$(KwtlsVersion).dll</_KwtlsDll>
+    <_KwtlsManifest>$(_KwtlsDll).json</_KwtlsManifest>
+    <_WebDist>$(MSBuildThisFileDirectory)../../web/dist/</_WebDist>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)../../THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(_KwtlsDll)" Link="kwtls-$(KwtlsVersion).dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(_KwtlsDll)')" />
+    <None Include="$(_WebDist)**/*" Link="web/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(_WebDist)index.html')" />
+  </ItemGroup>
+  <Target Name="_WebAdminClearWebOutput" BeforeTargets="_CopyOutOfDateSourceItemsToOutputDirectory"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <RemoveDir Directories="$(OutDir)web" />
+  </Target>
+  <Target Name="_WebAdminNativeCheck" BeforeTargets="Build">
+    <Warning Condition="!Exists('$(_KwtlsDll)')" Code="KWA001"
+             Text="native/kwtls/dist/kwtls-$(KwtlsVersion).dll is missing (native/kwtls/build.sh): the mod falls back to SslStream (RSA, TLS 1.2)" />
+  </Target>
+  <Target Name="_WebAdminPackCheck" BeforeTargets="KilnPack">
+    <Error Condition="'$(WebAdminLab)' == 'true'" Code="KWA003" Text="KilnPack refuses a lab build (-p:WebAdminLab=true)" />
+    <Error Condition="!Exists('$(_WebDist)index.html') Or !Exists('$(OutDir)web/index.html')" Code="KWA007"
+           Text="KilnPack needs the built web app: run bun install --frozen-lockfile and bun run build in web/." />
+    <Error Condition="!Exists('$(_KwtlsDll)')" Code="KWA002"
+           Text="KilnPack needs native/kwtls/dist/kwtls-$(KwtlsVersion).dll: build it with native/kwtls/build.sh windows" />
+  </Target>
+  <!-- A reproducible zip: KilnPack's ZipDirectory takes each file's time and the file system's order, so the archive is
+       written again with the entries in ordinal order, one fixed time (SOURCE_DATE_EPOCH, else 2026-01-01) and the same
+       compression. The same commit then packs to the same bytes (tools/release/repro.sh checks it). -->
+  <UsingTask TaskName="WebAdminNormalizeZip" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Zip ParameterType="System.String" Required="true" />
+      <Epoch ParameterType="System.String" Required="false" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var time = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        long s;
+        if (!string.IsNullOrEmpty(Epoch) && long.TryParse(Epoch, out s)) time = DateTimeOffset.FromUnixTimeSeconds(Math.Max(315532800, s));
+        var entries = new List<KeyValuePair<string, byte[]>>();
+        using (var src = ZipFile.OpenRead(Zip))
+          foreach (var e in src.Entries)
+          {
+            if (e.FullName.EndsWith("/")) continue;
+            using (var st = e.Open()) using (var ms = new MemoryStream()) { st.CopyTo(ms); entries.Add(new KeyValuePair<string, byte[]>(e.FullName, ms.ToArray())); }
+          }
+        entries.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+        var tmp = Zip + ".tmp";
+        using (var fs = new FileStream(tmp, FileMode.Create))
+        using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+          foreach (var kv in entries)
+          {
+            var entry = zip.CreateEntry(kv.Key, CompressionLevel.Optimal);
+            entry.LastWriteTime = time;
+            using (var w = entry.Open()) w.Write(kv.Value, 0, kv.Value.Length);
+          }
+        File.Copy(tmp, Zip, true);
+        File.Delete(tmp);
+        Log.LogMessage(MessageImportance.High, "reproducible zip: " + entries.Count + " files, time " + time.ToString("u"));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="_WebAdminReproducibleZip" AfterTargets="KilnPack">
+    <WebAdminNormalizeZip Zip="$(_KilnPackFile)" Epoch="$(SOURCE_DATE_EPOCH)" />
+    <GetFileHash Files="$(_KilnPackFile)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="_WebAdminZipSha256" />
+    </GetFileHash>
+    <Message Importance="high" Text="$(_KilnPackFile) sha256 $(_WebAdminZipSha256.ToLowerInvariant())" />
+  </Target>
+
+  <!-- The shipped DLL must be the one native/kwtls/build.sh windows made: its manifest's sha256 must match. -->
+  <Target Name="_WebAdminKwtlsCheck" BeforeTargets="KilnPack;KilnDeploy">
+    <Error Condition="'$(WebAdminAllowNoKwtls)' != 'true' and !Exists('$(_KwtlsDll)')" Code="KWA002"
+           Text="native/kwtls/dist/kwtls-$(KwtlsVersion).dll is missing: build it with native/kwtls/build.sh windows. -p:WebAdminAllowNoKwtls=true deploys without it (SslStream fallback, labs only)." />
+    <Error Condition="Exists('$(_KwtlsDll)') and !Exists('$(_KwtlsManifest)')" Code="KWA004"
+           Text="native/kwtls/dist/kwtls-$(KwtlsVersion).dll has no build manifest ($(_KwtlsManifest)): it was not made by native/kwtls/build.sh windows. Rebuild it." />
+    <GetFileHash Condition="Exists('$(_KwtlsDll)') and Exists('$(_KwtlsManifest)')" Files="$(_KwtlsDll)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="_KwtlsSha256" />
+    </GetFileHash>
+    <PropertyGroup Condition="'$(_KwtlsSha256)' != ''">
+      <_KwtlsManifestSha256>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(_KwtlsManifest)')), '"sha256":\s*"([0-9a-fA-F]{64})"').Groups[1].Value)</_KwtlsManifestSha256>
+    </PropertyGroup>
+    <Error Condition="'$(_KwtlsSha256)' != '' and '$(_KwtlsSha256.ToLowerInvariant())' != '$(_KwtlsManifestSha256.ToLowerInvariant())'" Code="KWA005"
+           Text="native/kwtls/dist/kwtls-$(KwtlsVersion).dll (sha256 $(_KwtlsSha256.ToLowerInvariant())) is not the DLL its manifest records ($(_KwtlsManifestSha256)): rebuild it with native/kwtls/build.sh windows." />
+    <GetFileHash Condition="'$(_KwtlsSha256)' != '' and Exists('$(OutDir)kwtls-$(KwtlsVersion).dll')" Files="$(OutDir)kwtls-$(KwtlsVersion).dll" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="_KwtlsOutSha256" />
+    </GetFileHash>
+    <Error Condition="'$(_KwtlsSha256)' != '' and '$(_KwtlsOutSha256)' != '$(_KwtlsSha256)'" Code="KWA006"
+           Text="$(OutDir)kwtls-$(KwtlsVersion).dll is not native/kwtls/dist's DLL (stale or missing copy): rebuild the mod." />
+    <Message Condition="'$(_KwtlsSha256)' != ''" Importance="high" Text="kwtls-$(KwtlsVersion).dll sha256 $(_KwtlsSha256.ToLowerInvariant()) (native/kwtls/build.sh windows)" />
+  </Target>
+  <ItemGroup>
+    <!-- Kiln's types without a prefix (the namespace used to be Kiln.WebAdmin, inside Kiln) -->
+    <Using Include="Kiln" />
+  </ItemGroup>
+</Project>

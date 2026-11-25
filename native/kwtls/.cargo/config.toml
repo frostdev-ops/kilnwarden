@@ -1,0 +1,4 @@
+# The Windows build links the C runtime statically: the DLL then imports only Windows system DLLs (no VC++ redistributable
+# on a hosting provider's Wine prefix or a Windows server).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

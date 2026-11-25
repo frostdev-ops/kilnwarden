@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline tests (no game): the engine directly (Http/, Routing/, Modules/, Config/, Storage/, Tls/, Server/), and the
+       mod loaded in Kiln's test harness (Mod/).
+         dotnet test tests/Offline
+       Tls/ uses the host build of kwtls (native/kwtls: cargo build -release -> libkwtls.so) when it is there. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>$(WebAdminNamespace).Offline</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace).Offline</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Kiln.TestKit" Version="$(WebAdminKilnSdk)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit.v3" Version="3.1.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Kilnwarden/Kilnwarden.csproj" />
+    <ProjectReference Include="../../src/Kilnwarden.Core/Kilnwarden.Core.csproj" />
+    <ProjectReference Include="../Fuzz/Kilnwarden.Fuzz.csproj" />
+    <!-- lane C: the extension API sample (registered in tests, and loaded into a collectible context for the unload test) -->
+    <ProjectReference Include="../../samples/Kilnwarden.Sample/Kilnwarden.Sample.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- integration: Ed25519 known answers (OpenSSL) and edge cases, made by tools/ed25519-vectors.py -->
+    <EmbeddedResource Include="Identity/ed25519-vectors.json" LogicalName="ed25519-vectors.json" />
+    <!-- the targeted Kiln.Admin's op list (KapOpsTests) -->
+    <None Include="Kap/kiln-admin-ops.txt" CopyToOutputDirectory="PreserveNewest" Link="kiln-admin-ops.txt" />
+    <!-- the dotnet new template's module code, compiled and run as an extension (TemplateTests) -->
+    <Compile Include="../../templates/kilnwarden-module/Panel.cs" Link="Template/Panel.cs" />
+    <!-- minisign and BLAKE2b vectors (tools/minisign-vectors.py) -->
+    <None Include="Ops/minisign-vectors.json" CopyToOutputDirectory="PreserveNewest" Link="minisign-vectors.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Kiln's types without a prefix (the namespace used to be Kiln.WebAdmin, inside Kiln) -->
+    <Using Include="Kiln" />
+  </ItemGroup>
+</Project>

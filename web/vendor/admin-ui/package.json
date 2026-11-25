@@ -1,0 +1,32 @@
+{
+  "name": "@kiln/admin-ui",
+  "private": true,
+  "description": "The Kiln Launcher's server admin pages as a package for other hosts (Kiln Web Admin): pages, hooks, the KAP/1 hub and its transports. Sources: launcher/src/admin (entry src/admin/web.ts) and what it imports; built here by `bun run build:admin-ui` in launcher/. Never published.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/admin/web.d.ts",
+      "import": "./dist/admin-ui.js"
+    },
+    "./style.css": "./dist/admin-ui.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "cd ../.. && bun run build:admin-ui"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.26",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.68.0",
+    "zustand": "^5.0.16"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.105.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.5"
+  }
+}

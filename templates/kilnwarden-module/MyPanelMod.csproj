@@ -1,0 +1,28 @@
+<Project Sdk="Kiln.Sdk/0.2.0-dev.31.10">
+  <!-- A Kiln mod that adds a module to the Kilnwarden panel (its extension API, Kilnwarden.Api.dll).
+         dotnet build                         the mod folder (bin/<cfg>/net10.0)
+         dotnet build -t:KilnPack             my-panel-mod-<version>.zip
+       Kilnwarden.Api.dll: copy it from the panel's mod folder (kiln/mods/kilnwarden/) into lib/ (or set
+       KilnwardenApi to its path). It is compile-only: at run time the panel's own copy is used, so the mod never ships it.
+       The panel is an optional dependency: without it this mod loads and does nothing. -->
+  <PropertyGroup>
+    <KilnModId>my-panel-mod</KilnModId>
+    <KilnModName>MyPanelMod</KilnModName>
+    <Description>Adds a page to the Kilnwarden panel.</Description>
+    <AssemblyName>MyPanelMod</AssemblyName>
+    <RootNamespace>MyPanelMod</RootNamespace>
+    <KilnSide>server</KilnSide>
+    <KilnClients>none</KilnClients>
+    <Version>0.1.0</Version>
+    <KilnwardenApi Condition="'$(KilnwardenApi)' == ''">$(MSBuildThisFileDirectory)lib/Kilnwarden.Api.dll</KilnwardenApi>
+  </PropertyGroup>
+  <ItemGroup>
+    <KilnDependency Include="kilnwarden" Version="&gt;=0.1.0" Optional="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Kilnwarden.Api" HintPath="$(KilnwardenApi)" Private="false" />
+  </ItemGroup>
+  <Target Name="_NeedsWebAdminApi" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(KilnwardenApi)')" Text="Kilnwarden.Api.dll is missing: copy it from kiln/mods/kilnwarden/ into lib/ (or set KilnwardenApi)." />
+  </Target>
+</Project>

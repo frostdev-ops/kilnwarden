@@ -1,0 +1,58 @@
+{
+  "tool": "Codex built-in image_gen",
+  "use": "New original artwork",
+  "artworks": [
+    {
+      "name": "hero_wide",
+      "file": "source/hero_wide.png",
+      "target_size": [
+        3072,
+        1024
+      ],
+      "prompt": "Regenerate the supplied original fantasy panorama as a production-ready unlettered website hero. Keep its original stone-and-brick beehive watch-kiln, rough rocky hill, warm lantern room and glowing arched firebox, a few timber-and-stone houses and campfires linked by fine threads of gold light, the wooded misty valley and the first stars. Keep the highly detailed painterly style and the deep teal-blue dusk, violet fog, ember orange (#FF6A1A) and soft gold (#F9C74F) palette. Use a true 3:1 ultra-wide canvas, ideally 3072 × 1024 pixels. If 3:1 is unavailable, keep all crucial subjects inside the center half of the canvas height.\n\nLeave a wider quiet title area. From the entire left edge through 40 percent of the canvas width, use only smooth, dark, low-contrast deep teal-blue sky and diffuse teal mist, all the way down to the bottom edge. No visible treetops, hill contours, rocks, stars, warm highlights, strings of light or discrete features in that area. Ease in the mountains and pine silhouettes gradually only beyond 40 percent of the width. Have the lantern room centered roughly 72 percent from the left, on its low rocky rise, with the valley and warm network all on the right. Concentrate the first stars to the upper right and keep the sunset subtle. Match the existing architectural design in the supplied painting. No people or human silhouettes. Absolutely no text, letters, digits, glyphs, letter-like runes, existing game assets, logos, signatures or watermarks.",
+      "actual_size": [
+        3072,
+        1024
+      ]
+    },
+    {
+      "name": "hero_landscape",
+      "file": "source/hero_landscape.png",
+      "target_size": [
+        1920,
+        1080
+      ],
+      "prompt": "Regenerate the supplied original fantasy concept painting as a 16:9 landscape hero, ideally 1920 × 1080 pixels. It is a night interior in the upper lantern room of a watch-kiln. Keep its rough teal-blue stone, warm lantern, arched window looking into a wooded violet-teal misty valley with tiny warm settlement lights, dark polished slate tablet in a carved stone frame, iron key ring, brass spyglass, and stone ledge. Match the source's painted detail, nocturnal teal and violet palette, ember orange (#FF6A1A) and soft gold (#F9C74F).\n\nChange the layout deliberately. Reserve the leftmost 43 percent of the width from top to bottom entirely for dark, low-contrast, softly brushed stone wall and shadow. Place the wall's architectural transition near the 45 percent mark. Start the stone ledge and the tablet's complete silhouette at or after 48 percent of the width. Fit the tablet and all its outer stone frame, the entire iron key ring, brass spyglass and small lantern loosely within the right half, with a little breathing room at the right edge. The window and its arch are wholly on the right, behind the still life. Stage the objects close to one another at a slightly smaller scale to make the wider quiet area. Give the slate a thin, ember-lit top-down contour map with a few scattered round dots, a row of plain solid bars, and a simple continuous profile line. Use only geographical curves and basic graph shapes on the slate. Absolutely no labels or text, numbers, text-like glyphs, runes, logos, signatures, watermarks or people. The art and all depicted objects are entirely original.",
+      "actual_size": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "hero_square",
+      "file": "source/hero_square.png",
+      "target_size": [
+        1024,
+        1024
+      ],
+      "prompt": "Paint a new, original square fantasy concept-art hero, ideally 1024 × 1024 pixels. Use the supplied original valley painting as a visual reference only for the specific watch-kiln architecture, color and brushwork. Create a new composition with a closer, ground-level view of that same building centered on its rocky hill, straight ahead with a subtle three-quarter angle. Its flared beehive-shaped base is built from charcoal-blue fieldstone and bands of red firebrick. The lower face has a wide, round-arched firebox mouth. Above it rises a short, narrow round masonry tower crowned with a small angular lantern room. Warm light pours from the firebox and lantern room across the rough masonry and wet rocks. Violet-teal magical fog swirls around the hill at the base. A few fine golden threads arc outward from the tower toward the side edges of the picture, all below the sky reserved for the title.\n\nPlace the lantern room roof and its highest finial below 27 percent of the image height, with the full kiln and rocky hill filling the lower three quarters. Keep the entire top 25 percent from left to right calm and dark, using only softly shaded dark teal-blue night sky and a trace of quiet violet haze. Put no stars, bright clouds, tree silhouettes, sparks or light threads in that band. Use layered painterly brushwork with high-detail original masonry and subtle light diffusion. Deep teal-blue night and violet magical fog contrast with warm ember orange (#FF6A1A) and soft gold (#F9C74F). No people or silhouettes of people. Absolutely no text, letters, digits, text-like runes, existing game assets, logos, signatures or watermarks.",
+      "actual_size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "icon",
+      "file": "source/icon.png",
+      "target_size": [
+        1024,
+        1024
+      ],
+      "prompt": "Regenerate the supplied original square painterly fantasy emblem, ideally 1024 × 1024 pixels. Use the same original bold gold heater-shield contour, dark stone kiln arch, broad ember-orange and gold flame, small iron ward key worked into the lower point, delicate teal rim light and simple near-black teal field. Make the entire emblem distinctly smaller relative to the canvas and precisely centered. Its complete silhouette, including the shield rim, should occupy only about 70 to 74 percent of the width and height, with generous dark padding of at least 12 percent on each edge. This is essential. The background remains uninterrupted flat near-black teal all the way to all four edges.\n\nKeep broad graphic shapes and thick contour strokes, strong local contrast and the hand-painted feel. Keep the warm colors near ember orange (#FF6A1A) and soft gold (#F9C74F). Light the small key enough for its closed ring, short shaft and single squared tooth to read when the entire image is reduced to 64 × 64 pixels. Retain simple brush texture on the emblem only. Do not add anything outside or around the shield. No people, text, digits, letterforms, text-like runes, extra motifs, existing logos, signatures or watermarks.",
+      "actual_size": [
+        1024,
+        1024
+      ]
+    }
+  ]
+}

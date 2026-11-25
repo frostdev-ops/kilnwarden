@@ -1,0 +1,36 @@
+{
+  "name": "kilnwarden-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The web app of the Kilnwarden mod: the sign-in shell, the web-only pages and the launcher's admin pages (@kiln/admin-ui, vendored in vendor/admin-ui). Built into dist/, which the mod folder serves as web/.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p . && vite build && bun scripts/postbuild.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test ./unit",
+    "e2e": "playwright test",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.105.3",
+    "@tanstack/react-virtual": "3.14.26",
+    "leaflet": "1.9.4",
+    "lucide-react": "1.68.0",
+    "qrcode-generator": "2.0.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "7.18.5",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/leaflet": "1.9.22",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "6.2.1",
+    "bun-types": "1.4.4",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  }
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Fuzz targets for every parser (HTTP head, WebSocket upgrade, cookies, query strings, paths, JSON bodies, PEM,
+       Accept-Encoding, IP ranges, the kwtls glue). Each target is a static method taking bytes that must never throw
+       anything but its documented error type nor hang. The built-in driver mutates the seed corpus:
+         dotnet run -c Release (in tests/Fuzz; arguments: a target name or all, seconds, seed)
+       Findings are written to tests/Fuzz/findings/<target>/. The Offline tests run every target briefly. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>$(WebAdminNamespace).Fuzz</AssemblyName>
+    <RootNamespace>$(WebAdminNamespace).Fuzz</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Kilnwarden.Core/Kilnwarden.Core.csproj" />
+  </ItemGroup>
+</Project>
