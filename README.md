@@ -127,6 +127,8 @@ it privately: see [SECURITY.md](SECURITY.md).
 
 ## Hosted access on kiln.nexus (coming soon)
 
+**kiln.nexus is frostdev's own domain for Kiln. It has no affiliation with Nexus Mods (nexusmods.com).**
+
 Hosted access gives your panel an address like `https://myserver.kiln.nexus` with no port forwarding. Your server
 keeps one outbound connection to frostdev.io's relay on port 443, and the relay hands each browser connection to it.
 That is what makes it work on rented game servers, behind CGNAT, with IPv6 only and in containers.
@@ -212,4 +214,5 @@ listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt):
 The map's terrain is the game's own art, so it isn't in the zip. Copy the Kiln Launcher's game art into
 `kiln/data/kilnwarden/map-assets/` to see it. Players, markers and zones show without it.
 
-Made by Frostdev. Kilnwarden is unofficial and not affiliated with or endorsed by Keen Games.
+Made by Frostdev. Kilnwarden is unofficial and not affiliated with or endorsed by Keen Games. kiln.nexus is frostdev's
+own domain and has no affiliation with Nexus Mods (nexusmods.com).
