@@ -35,43 +35,46 @@ The server dials out to `frostdev.io` on port 443 (a WebSocket) and keeps that l
 forwarding, works behind the host's NAT and when only outbound HTTPS is allowed. The panel itself stays on the
 server's loopback address.
 
-### Steps
+### Steps (Kilnwarden 0.1.2 and later)
 
 1. **Install.** Stop the server. Over FTP, put Kiln's server pack and Kilnwarden into the server folder
-   (`kiln/mods/kilnwarden/kiln.mod.json` must exist). Start the server once, so the panel makes its data folder,
-   then stop it.
-2. **Pick a name**: 3 to 40 of `a-z`, `0-9` and `-`, not starting or ending with `-`. Some names are reserved
-   (`www`, `api`, `relay`, `panel`, `admin`, `app`, `auth`, `mail`, `docs`, `wiki`, `status`, `help`, `support`,
-   `cdn`, `dev`, `beta`, `kiln`, `frostdev`, `discord`, `nexus` and a few more) and `kiln.nexus` itself is never a
-   panel. Below, `myserver` stands for your name.
-3. **Edit three files** in `kiln/data/kilnwarden/` over FTP (create them if they are missing; keep any other
-   settings they hold):
+   (`kiln/mods/kilnwarden/kiln.mod.json` must exist). Start the server.
+2. **In the server console**, type `kilnwarden setup hosted myserver` (your name: 3 to 40 of `a-z`, `0-9` and `-`, not
+   starting or ending with `-`; a few are kept for Kiln itself, such as `www`, `api`, `admin`, `kiln` or `claim`). It
+   writes every setting itself (relay.json, settings.json's TLS mode, acme.json's DNS-01) and answers with a claim link.
+   No web console? Upload a text file holding the command as `kiln/control/console/setup.txt`, rename it to
+   `setup.cmd`, and download `setup.result.json` a few seconds later.
+3. **Claim the name.** Open the claim link yourself (it works once, for 15 minutes), sign in with your Discord account
+   (a member of the Kiln Discord; one name per account), check the name and press **Claim**.
+4. **About two minutes later, type `kilnwarden setup`.** Until the name is ready it shows a checklist (connected,
+   claimed, secure, ready) and what to do next; then it answers with a link to create your account at
+   `https://myserver.kiln.nexus/setup#token=...`. That link works once, for 30 minutes.
+5. Open it, choose your name and password, and you are in. The setup carries on in the panel (Discord sign-in for
+   helpers, optional). In **My account**, turn on two-factor sign-in.
+
+`kilnwarden status` shows the checklist at any time. The console's setup keeps hosted access open for an hour without
+an owner; type `kilnwarden setup` again if it closed (a restart closes it too).
+
+**Why this is safe.** Until the owner exists, the panel never listens on a public address; only the server console
+opens it through the relay, for an hour at a time. The account link of step 4 is made only once the name has its
+trusted Let's Encrypt certificate, so the browser checks the panel's identity before the password is typed. The link in
+`kiln.log` only works on the server's own machine: it never creates the owner through the relay, so a log shared for
+help opens nothing. Neither the claim link nor the account link is written to `kiln.log`.
+
+### By hand (Kilnwarden 0.1.1, or to see what the console writes)
+
+1. Start the server once, so the panel makes its data folder, then stop it.
+2. Edit three files in `kiln/data/kilnwarden/` over FTP (create them if they are missing; keep any other settings):
    - `relay.json`: `{"enabled": true, "origin": "https://frostdev.io", "host": "myserver.kiln.nexus"}`
    - `settings.json`: `"tls": {"mode": "acme", "hostnames": ["myserver.kiln.nexus"]}` and `"remoteSetup": true`.
-     Leave `bind` at `127.0.0.1`: nothing needs to listen outside the server.
-   - `acme.json`: `{"format": 1, "acceptTerms": true, "email": "you@example.com", "challenge": "dns-01", "names": ["myserver.kiln.nexus"]}`
-     (`acceptTerms` accepts Let's Encrypt's terms; the email is optional).
-4. **Start the server, then claim the name** with your Discord account (you need to be a member of the Kiln Discord
-   server; one name per account). Get a claim link from the server's console: upload a text file holding
-   `kilnwarden claim` as `kiln/control/console/claim.txt`, rename it to `claim.cmd`, and download `claim.result.json` a
-   few seconds later. Open the link in its answer yourself (it works once, for 15 minutes; whoever opens it first can
-   claim the name for your server), sign in with Discord on the claim pages (`https://claim.kiln.nexus`), check the name and the key
-   fingerprint, and press **Claim**. Until then the log says the relay does not know the name; the panel keeps trying
-   every 4 seconds. (If you can already open the panel, Panel settings > Hosted access > **Make a claim link** does the
-   same. Or send `kiln/data/kilnwarden/relay-public.pem` with the name you want to the relay's operator: see
-   "Registration" below.)
-5. **Once the name is claimed**, the next try connects (`Kilnwarden relay connected for myserver.kiln.nexus`)
-   and the certificate follows by DNS-01 within a few minutes (`ACME: new certificate for myserver.kiln.nexus`). A
-   claimed name waits an hour for the server's first connection, then lapses.
-6. **The first sign-in.** Get the one-time setup link, either way:
-   - from `kiln/logs/kiln.log` (download it over FTP; search for `setup#token=`). With `remoteSetup` on, the line
-     says "from any machine" and names `https://myserver.kiln.nexus/setup#token=...` first;
-   - or with a console command: upload a text file holding `kilnwarden setup` as `kiln/control/console/setup.txt`,
-     rename it to `setup.cmd`, and download `setup.result.json` a few seconds later. Its link works once, for an
-     hour. (`kilnwarden status` says where the panel listens, its certificate, whether the owner exists and what the
-     relay is doing.)
-   Open the link in any browser, choose the owner's name and password, and you are in.
-7. In **My account**, turn on two-factor sign-in. `remoteSetup` has no effect once the owner exists; you may remove it.
+     Leave `bind` at `127.0.0.1`.
+   - `acme.json`: `{"format": 1, "acceptTerms": true, "challenge": "dns-01", "names": ["myserver.kiln.nexus"]}`
+     (`acceptTerms` accepts Let's Encrypt's terms).
+3. Start the server and claim the name with `kilnwarden claim` (its answer file holds the link).
+4. Once the name is claimed, the next try connects (`Kilnwarden relay connected for myserver.kiln.nexus`) and the
+   certificate follows by DNS-01 within a few minutes (`ACME: new certificate for myserver.kiln.nexus`).
+5. The setup link is in `kiln/logs/kiln.log` (with `remoteSetup` on it names `https://myserver.kiln.nexus/setup#token=...`
+   first), or comes from `kilnwarden setup`. Open it, create the owner. `remoteSetup` has no effect once the owner exists.
 
 The Kiln Launcher's "Open web panel" needs the server on your PC or reachable over SSH, so for a rented server just
 open `https://myserver.kiln.nexus` in your browser and sign in with your panel account.
@@ -94,7 +97,9 @@ open `https://myserver.kiln.nexus` in your browser and sign in with your panel a
 | `... TLS to frostdev.io:443 failed: something between this server and the relay intercepts HTTPS, or this server's clock or certificate store is wrong` | An intercepting proxy or firewall, or a wrong clock. |
 | `... the relay is limiting this address` (429), `... the relay is full or restarting` (503) | The relay's limits (many servers behind one address) or maintenance; it retries. |
 | `relay for ...: relay-key.pem cannot be read` | Delete `relay-key.pem` and `relay-public.pem`, restart, register the new public key. |
-| `no owner account yet. Open this link on this machine ...` | `remoteSetup` is not on: the setup only opens on the server's own machine. Set it (step 3) and restart, or use `kilnwarden setup` after setting it. |
+| `Kilnwarden: set up your panel (about 2 minutes).` and `On this computer, open ...` | The first start. On a rented server, use the console instead (steps 2 to 4). |
+| The account page: "This link only works on the server's own computer" | That was kiln.log's link, opened over the internet. Type `kilnwarden setup` in the console for one that works there. |
+| The claim checklist waits at Secure | The certificate comes a minute or two after the claim; `kilnwarden status` says if it failed and when it tries again. |
 | `REMOTE SETUP: no owner account yet and settings.json remoteSetup is on ...` | Expected until you create the owner (step 6). |
 | Panel settings > Certificate: `dns-01 needs the enabled relay and its registered hostname as the only ACME name` | `acme.json` `names` and `relay.json` `host` must be the same one name. |
 | `no owner account yet (settings.json remoteSetup orders before it)` | The certificate waits for the owner; turn `remoteSetup` on to get it before. |

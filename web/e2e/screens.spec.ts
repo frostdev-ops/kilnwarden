@@ -2,6 +2,7 @@
 // (the mock's invented players and server, accounts and schedules made here). Skipped unless KWA_RELEASE_SCREENS names
 // the output folder. KWA_CONSUMER must be the mod id the dev host was built with (the launcher login's consumer).
 //   KWA_RELEASE_SCREENS=<dir> KWA_MOCK_SERVER_NAME=Embervale KILN_UI_WORKTREE=<kiln checkout> bunx playwright test e2e/screens.spec.ts
+import { ownerThroughWizard } from './wizard-flow';
 import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -47,10 +48,7 @@ test('release screenshots', async ({ browser }) => {
   // the owner, through the launcher's one-time login (as "Open web panel" does)
   const secret = execFileSync(process.env.KWA_PYTHON ?? 'python3', ['-I', resolve('e2e/kap-mock.py'), 'mint', '--dir', dir], { encoding: 'utf8' }).trim();
   await page.goto(`/launcher#secret=${secret}`);
-  await page.getByLabel('Owner name', { exact: true }).fill('ashwyn');
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByLabel('Password again', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Create the owner account' }).click();
+  await ownerThroughWizard(page, 'ashwyn', password);
   await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
   const started = Date.now();
 

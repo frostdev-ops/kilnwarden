@@ -30,13 +30,18 @@ public sealed class AcmeComponent : IWebAdminComponent
     {
         var settings = b.SettingsFile<AcmeSettings>("acme.json", AcmeSettings.Validate);
         Config.EditableSettings.Of(b.Services).Add(Config.EditableFile.For("acme", "Let's Encrypt certificate", settings));
+        b.Services.Add(settings); // the setup wizard writes acme.json for hosted access and an own address (0.1.2)
         var opts = _o.Time is null ? new AcmeOptions
         {
             Time = b.Environment.Time, Http = _o.Http, Polling = _o.Polling, FirstCheck = _o.FirstCheck, Period = _o.Period, DefaultBind = _o.DefaultBind,
         } : _o;
         // an order needs the owner, or settings.json remoteSetup before it (the first-run setup on a trusted certificate)
-        _m = new AcmeManager(b.Data, settings, () => b.Settings.Current, () => Hosting.ISetupState.RemoteReachAllowed(b.SetupState, b.Settings.Current), b.Log, opts,
-            () => b.Services.TryGet<Config.SettingsStore<Relay.RelaySettings>>()?.Current);
+        // the hosted setup from the server console (0.1.2) may order before the owner exists too
+        _m = new AcmeManager(b.Data, settings, () => b.Settings.Current,
+            () => Hosting.ISetupState.RemoteReachAllowed(b.SetupState, b.Settings.Current) || b.Services.TryGet<Setup.HostedSetupWindow>()?.Open == true, b.Log, opts,
+            () => b.Services.TryGet<Config.SettingsStore<Relay.RelaySettings>>()?.Current,
+            () => b.Services.TryGet<Relay.RelayStatus>()?.Describe().State == "connected");
+        _services = b.Services;
         var reg = b.Modules.Register(new ModuleSpec
         {
             Id = ModuleId, Title = "Certificates (ACME)", Icon = "shield-check", CanDisable = false,
@@ -61,14 +66,23 @@ public sealed class AcmeComponent : IWebAdminComponent
         b.Settings.Changed += (_, _) => _m.Kick();
     }
 
+    private WebAdminServices? _services;
+    private Relay.RelayStatus? _relay;
+
     public Task StartAsync(WebAdminServices services, CancellationToken ct)
     {
         _m!.Start();
+        // a dns-01 order waits for the relay link (0.1.2): it starts as soon as the link is up, not at the next hourly check
+        _relay = _services?.TryGet<Relay.RelayStatus>();
+        if (_relay is not null) _relay.Connected += OnRelayConnected;
         return Task.CompletedTask;
     }
 
+    private void OnRelayConnected() => _m?.Kick();
+
     public Task StopAsync(CancellationToken ct)
     {
+        if (_relay is not null) _relay.Connected -= OnRelayConnected;
         _m?.Dispose();
         return Task.CompletedTask;
     }

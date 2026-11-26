@@ -8,9 +8,20 @@ namespace Kilnwarden.Relay;
 /// <summary>What the relay client is doing, for the console's <c>kilnwarden status</c>.</summary>
 public sealed class RelayStatus(Func<RelayStatus.Info> describe)
 {
-    public sealed record Info(bool Enabled, string Host, string State, string? LastError);
+    /// <param name="Problem">What the last failure was, for the setup wizard's plain-words fixes (0.1.2):
+    /// <see cref="RelayErrors.Kind"/>; null when connected or never tried.</param>
+    public sealed record Info(bool Enabled, string Host, string State, string? LastError, string? Problem = null);
 
     public Info Describe() => describe();
+
+    /// <summary>The relay link came up (any thread): a claim went through, or the link is back.</summary>
+    public event Action? Connected;
+
+    internal void RaiseConnected()
+    {
+        try { Connected?.Invoke(); }
+        catch (Exception) { /* a listener's failure never takes the relay loop down */ }
+    }
 }
 
 /// <summary>Claim links for the relay's Discord claim pages (Panel settings > Hosted access > Claim this name, and the
@@ -61,6 +72,33 @@ internal sealed class RelayRefusedException(int status, Exception inner) : IOExc
 /// owner can do; the relay's answers are in docs/protocol-relay-broker.md.</summary>
 internal static class RelayErrors
 {
+    /// <summary>The failure as one word, for the setup wizard and <c>kilnwarden status</c> (0.1.2): "unclaimed" (the relay
+    /// does not know the name for this key), "moving" (the name moves here later), "moved" (it moved away or was
+    /// released), "clock", "limited", "busy", "no-relay", "dns", "blocked" (outbound HTTPS), "tls", "timeout" or "other".</summary>
+    public static string Kind(Exception e, RelayControl.Scheduled? past = null)
+    {
+        switch (e)
+        {
+            case RelayRefusedException { Status: 403, MovingAt: not null }: return "moving";
+            case RelayRefusedException { Status: 401 or 403 } when past is not null: return "moved";
+            case RelayRefusedException { Status: 403 }: return "unclaimed";
+            case RelayRefusedException { Status: 401 }: return "clock";
+            case RelayRefusedException { Status: 429 }: return "limited";
+            case RelayRefusedException { Status: 404 }: return "no-relay";
+            case RelayRefusedException { Status: >= 500 }: return "busy";
+            case RelayRefusedException: return "other";
+            case TimeoutException: return "timeout";
+        }
+        for (var x = e; x is not null; x = x.InnerException)
+        {
+            if (x is SocketException se)
+                return se.SocketErrorCode is SocketError.HostNotFound or SocketError.TryAgain or SocketError.NoData ? "dns" : "blocked";
+            if (x is TimeoutException && x != e) return "blocked";
+            if (x is AuthenticationException) return "tls";
+        }
+        return "other";
+    }
+
     /// <param name="past">A move or release the relay had scheduled for the name whose time has passed (lane L1b).</param>
     public static string Explain(Exception e, RelaySettings s, RelayControl.Scheduled? past = null)
     {

@@ -34,4 +34,6 @@ for (let i = 0; !existsSync(endpoint); i++) {
   if (i > 100) throw Error('mock KAP endpoint did not appear');
   await new Promise(r => setTimeout(r, 50));
 }
-start('dotnet', [resolve('../tools/devhost/bin/Debug/net10.0/Kilnwarden.DevHost.dll'), '--server', dir, '--port', process.env.KWA_E2E_PORT!, '--web', resolve('dist')]);
+// KWA_E2E_DEVHOST_ARGS: more dev host arguments (the setup wizard's host: TLS, a relay and a CA that never answer)
+const extra = (process.env.KWA_E2E_DEVHOST_ARGS ?? '').split(' ').filter(Boolean);
+start('dotnet', [resolve('../tools/devhost/bin/Debug/net10.0/Kilnwarden.DevHost.dll'), '--server', dir, '--port', process.env.KWA_E2E_PORT!, '--web', resolve('dist'), ...extra]);

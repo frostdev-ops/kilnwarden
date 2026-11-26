@@ -11,6 +11,7 @@ public sealed class WebAdminMod : Mod
 {
     private WebAdminHost? _host;
     private GameThreadQueue? _game;
+    private LegacyNotice? _notice;
 #if LAB
     private Lab.LabProbe? _lab;
     private PacingHandler? _pacing;
@@ -32,8 +33,12 @@ public sealed class WebAdminMod : Mod
             var where = string.Equals(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(oldFolder))),
                 Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(Context.Info.Directory))), StringComparison.OrdinalIgnoreCase)
                 ? $"kiln/mods/{Path.GetFileName(Path.TrimEndingDirectorySeparator(oldFolder))}" : oldFolder;
-            Log.Error($"{Product.Name}: Kiln Web Admin, this panel's old name, is still installed ({where}). " +
-                      $"Stop the server, delete that folder and start again; {Product.Name} stays off until then.");
+            // 0.1.2: say exactly what to delete in kiln.log, in the console's answers and on the panel's own address
+            ConsoleCommands.Off = Setup.SetupTexts.OldCopy(where);
+            Log.Error($"{Product.Name}: {ConsoleCommands.Off}");
+            _notice = LegacyNotice.TryStart(Context.DataDirectory,
+                WebAdminEnvironment.QueryPortOf(Path.GetFullPath(Path.Combine(Context.Info.Directory, "..", "..", ".."))), ConsoleCommands.Off,
+                m => Log.Info($"{Product.Name}: {m}"));
             return;
         }
         var (migration, moved) = LegacyInstall.MigrateDataFolder(Context.DataDirectory);
@@ -78,13 +83,14 @@ public sealed class WebAdminMod : Mod
     // say "webadmin claim").
     // The server console only (the console folder kiln/control/console/<name>.cmd, which works over FTP, and kilnctl
     // cmd): on a rented game server without a browser on the machine, this is how the owner gets the first setup link.
-    [Command("kilnwarden setup", Description = "a one-time link to create the panel's owner account (while there is none)",
+    // 0.1.2: "kilnwarden setup hosted <name>" sets up hosted access from the console alone (a rented server).
+    [Command("kilnwarden setup", Description = "what to do next to set up the panel; \"kilnwarden setup hosted <name>\" for a server without a browser",
         Permission = CommandPermission.Console)]
     [Command("webadmin setup", Description = "the old name of kilnwarden setup",
         Permission = CommandPermission.Console)]
-    private string SetupCommand() => ConsoleCommands.Setup(_host);
+    private string SetupCommand(string what = "", string name = "") => ConsoleCommands.Setup(_host, what, name);
 
-    [Command("kilnwarden status", Description = "where the panel listens, its certificate, the owner account, the relay",
+    [Command("kilnwarden status", Description = "a checklist of the panel's setup: what is done, what is left, what to do next",
         Permission = CommandPermission.Console)]
     [Command("webadmin status", Description = "the old name of kilnwarden status",
         Permission = CommandPermission.Console)]
@@ -114,6 +120,9 @@ public sealed class WebAdminMod : Mod
 #endif
         var summary = _host?.Stop() ?? "never started";
         _host = null;
+        _notice?.Dispose();
+        _notice = null;
+        ConsoleCommands.Off = null;
         _game?.Dispose();
         _game = null;
 #if LAB

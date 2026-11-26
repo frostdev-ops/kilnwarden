@@ -13,6 +13,11 @@ public interface ITlsServer : IDisposable
     /// <summary>The certificate handshakes use now.</summary>
     CertificateInfo Certificate { get; }
 
+    /// <summary>The certificate a connection without a server name gets (an IP address such as 127.0.0.1, or
+    /// "localhost"): the Kiln Launcher pins it (launcher-endpoint.json). The same as <see cref="Certificate"/> except in
+    /// tls.mode acme, where those connections keep the self-signed one (0.1.2, <see cref="SniSplitServer"/>).</summary>
+    CertificateInfo LoopbackCertificate => Certificate;
+
     /// <summary>Runs the server handshake. Throws (IOException, AuthenticationException, OperationCanceledException) on
     /// failure; the caller closes the socket.</summary>
     ValueTask<TlsStream> AcceptAsync(Stream transport, CancellationToken ct);

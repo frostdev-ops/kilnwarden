@@ -1,6 +1,7 @@
 // Every page and the main flows, at 1280x800 and 390x844, with full-page screenshots in out/complete/screens. Runs after
 // panel.spec.ts (it signs in as the owner through the launcher's one-time login, so the owner's two-factor setup from
 // that file does not matter); run alone, it creates the owner first.
+import { ownerThroughWizard } from './wizard-flow';
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -53,14 +54,11 @@ async function ownerState(browser: Browser) {
   const page = await ctx.newPage();
   const secret = execFileSync(process.env.KWA_PYTHON ?? 'python3', ['-I', resolve('e2e/kap-mock.py'), 'mint', '--dir', dir], { encoding: 'utf8' }).trim();
   await page.goto(`/launcher#secret=${secret}`);
-  const setup = page.getByRole('heading', { name: 'Create the owner account' });
+  const setup = page.getByRole('heading', { name: 'Set up your panel' });
   const home = page.getByRole('heading', { level: 1, name: 'Kilnwarden', exact: true });
   await expect(setup.or(home)).toBeVisible();
   if (await setup.isVisible()) {
-    await page.getByLabel('Owner name', { exact: true }).fill(name);
-    await page.getByLabel('Password', { exact: true }).fill(password);
-    await page.getByLabel('Password again', { exact: true }).fill(password);
-    await page.getByRole('button', { name: 'Create the owner account' }).click();
+    await ownerThroughWizard(page, name, password);
     await expect(home).toBeVisible();
   }
   state = await ctx.storageState();
@@ -207,7 +205,7 @@ for (const [label, viewport] of [['desktop', DESKTOP], ['phone', PHONE]] as cons
     // the setup page as a new server shows it (the status answer says there is no owner yet; nothing is sent)
     await page.route('**/api/auth/status', (r) => r.fulfill({ json: { ownerExists: false, signedIn: false, launcherLogin: true, providers: ['local'] } }));
     await page.goto('/setup#token=only-a-picture');
-    await expect(page.getByRole('heading', { name: 'Create the owner account' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Set up your panel' })).toBeVisible();
     if (label === 'phone') await noOverflow(page, '/setup');
     await shot(page, `${label}-setup`, { full: false });
     expect(unexpected(errors)).toEqual([]);

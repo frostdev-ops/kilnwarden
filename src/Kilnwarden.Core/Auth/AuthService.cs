@@ -10,7 +10,11 @@ using Kilnwarden.Modules;
 namespace Kilnwarden.Auth;
 
 /// <summary>Who is asking: the client address (after the trusted-proxy rules) and its User-Agent (for the session list).</summary>
-public sealed record ClientInfo(IPAddress Ip, string UserAgent);
+public sealed record ClientInfo(IPAddress Ip, string UserAgent)
+{
+    /// <summary>The request came through the relay (hosted access), not straight to this machine.</summary>
+    public bool Relayed { get; init; }
+}
 
 /// <summary>What a sign-in step ended with.</summary>
 public abstract record SignInResult
@@ -46,7 +50,20 @@ public sealed class AuthService
     private readonly TimeProvider _time;
     private readonly IWebAdminLog _log;
     private readonly ConcurrentDictionary<string, Ticket> _tickets = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _setupTokens = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SetupGrant> _setupTokens = new(StringComparer.Ordinal);
+
+    /// <summary>Where a setup token may create the owner (0.1.2). <see cref="SetupScope.ThisMachine"/>: kiln.log's link,
+    /// the console's <c>kilnwarden setup</c> on a server without hosted access, the launcher's; straight to this machine
+    /// only (a reverse proxy counts), never through the relay unless settings.json remoteSetup is on (as before 0.1.2).
+    /// <see cref="SetupScope.Hosted"/>: the console's link for hosted access, made only once the panel's name has its
+    /// trusted certificate, good for 30 minutes; never written to kiln.log.</summary>
+    public enum SetupScope { ThisMachine, Hosted }
+
+    private sealed record SetupGrant(DateTimeOffset Until, SetupScope Scope);
+
+    /// <summary>settings.json remoteSetup: tokens of <see cref="SetupScope.ThisMachine"/> also work through the relay
+    /// (the auth component sets it).</summary>
+    internal Func<bool> RemoteSetupOn { get; set; } = () => false;
     private readonly object _setupLock = new();
 
     public AuthService(AccountStore accounts, RoleStore roles, SessionStore sessions, PasswordHasher hasher, SignInLimiter limiter,
@@ -266,11 +283,11 @@ public sealed class AuthService
 
     /// <summary>A setup token (the link in kiln.log, or one the launcher's login gets while no owner exists). Only its
     /// hash is kept; every token stops working once the owner exists.</summary>
-    public string NewSetupToken(TimeSpan? lifetime = null)
+    public string NewSetupToken(TimeSpan? lifetime = null, SetupScope scope = SetupScope.ThisMachine)
     {
         if (OwnerExists) throw new InvalidOperationException("the owner exists");
         var t = SecretToken.New();
-        _setupTokens[SecretToken.Hash(t)] = lifetime is { } l ? _time.GetUtcNow() + l : DateTimeOffset.MaxValue;
+        _setupTokens[SecretToken.Hash(t)] = new SetupGrant(lifetime is { } l ? _time.GetUtcNow() + l : DateTimeOffset.MaxValue, scope);
         return t;
     }
 
@@ -279,11 +296,20 @@ public sealed class AuthService
     {
         if (Limiter.Attempt(c.Ip, null) is { } wait) return RateLimited("auth.setup", c, wait, null);
         if (OwnerExists) return new SignInResult.Refused(409, "owner_exists", "the owner account exists already: sign in");
-        if (!SecretToken.IsWellFormed(token) || !_setupTokens.TryGetValue(SecretToken.Hash(token!), out var until) || until <= _time.GetUtcNow())
+        if (!SecretToken.IsWellFormed(token) || !_setupTokens.TryGetValue(SecretToken.Hash(token!), out var grant) || grant.Until <= _time.GetUtcNow())
         {
             Limiter.Fail(c.Ip, null);
             Audit.Record(AuditLog.Entry("auth.setup", null, c.Ip, false, "wrong setup token"));
             return new SignInResult.Refused(401, "invalid_setup_token", "the setup link is wrong or was used");
+        }
+        // kiln.log's link (and the launcher's) creates the owner on this machine only: a log pasted somewhere never opens
+        // the panel to whoever reads it, even while hosted access is up for the console's setup (0.1.2)
+        if (grant.Scope == SetupScope.ThisMachine && c.Relayed && !RemoteSetupOn())
+        {
+            Limiter.Fail(c.Ip, null);
+            Audit.Record(AuditLog.Entry("auth.setup", null, c.Ip, false, "this machine's setup link used through the relay"));
+            return new SignInResult.Refused(403, "setup_link_this_machine",
+                "this setup link works on the server's own computer only. To set up over the internet, run kilnwarden setup in the server console");
         }
         name = name?.Trim() ?? "";
         if (!AccountNames.IsValid(name)) return new SignInResult.Refused(422, "invalid", "a name is 3 to 32 of A-Z a-z 0-9 . _ - (starting with a letter or digit)");
@@ -293,7 +319,9 @@ public sealed class AuthService
         lock (_setupLock)
         {
             if (OwnerExists) return new SignInResult.Refused(409, "owner_exists", "the owner account exists already: sign in");
-            if (!_setupTokens.TryRemove(SecretToken.Hash(token!), out _)) return new SignInResult.Refused(401, "invalid_setup_token", "the setup link is wrong or was used");
+            // Password work can queue: expiry must still hold when the grant is consumed, not just before hashing.
+            if (!_setupTokens.TryRemove(SecretToken.Hash(token!), out var consumed) || consumed.Until <= _time.GetUtcNow())
+                return new SignInResult.Refused(401, "invalid_setup_token", "the setup link is wrong or was used");
             owner = Accounts.FindByName(name) is { } existing
                 ? Accounts.Update(existing.Id, x => x with { PasswordHash = hash, Roles = [BuiltinRoles.Owner], Disabled = false, Primary = true, CredentialStamp = x.CredentialStamp + 1, PrivilegeStamp = x.PrivilegeStamp + 1 })
                 : Accounts.Add(new Account { Name = name, PasswordHash = hash, Roles = [BuiltinRoles.Owner], Primary = true, CreatedBy = "setup" });

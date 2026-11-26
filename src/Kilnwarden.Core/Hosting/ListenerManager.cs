@@ -191,8 +191,12 @@ internal sealed class ListenerManager
         // the listener also answers TLS-ALPN-01 validations with the challenge certificates
         if (plan.Tls == TlsMode.Acme && _acme() is { } acme)
         {
-            source = acme.Wrap(source);
-            ITlsServer main = lib is not null ? new KwtlsServer(lib, source, alpn, _log) : new SslStreamServer(source, alpn, _log);
+            var selfSigned = source;
+            source = acme.Wrap(selfSigned);
+            ITlsServer Engine(ICertificateSource c) => lib is not null ? new KwtlsServer(lib, c, alpn, _log) : new SslStreamServer(c, alpn, _log);
+            // the panel's names get the ACME certificate; 127.0.0.1, localhost and the launcher keep the self-signed one
+            // (0.1.2: the setup page on the server's own machine keeps working when the certificate arrives)
+            ITlsServer main = new SniSplitServer(Engine(source), Engine(new FixedCertificateSource(selfSigned.Current, "self-signed")));
             string[] challenge = [AlpnChallenges.Protocol];
             // the challenge certificate is served by SslStream whatever the main engine: RFC 8737 makes its acmeIdentifier
             // extension critical, and kwtls (webpki) refuses to load a certificate with a critical extension it does not

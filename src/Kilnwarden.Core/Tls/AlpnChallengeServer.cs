@@ -60,6 +60,7 @@ public sealed class AlpnChallengeServer(ITlsServer inner, AlpnChallenges challen
 
     public string Engine => inner.Engine;
     public CertificateInfo Certificate => inner.Certificate;
+    public CertificateInfo LoopbackCertificate => inner.LoopbackCertificate;
 
     public async ValueTask<TlsStream> AcceptAsync(Stream transport, CancellationToken ct)
     {

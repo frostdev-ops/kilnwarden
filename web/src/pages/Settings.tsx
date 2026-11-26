@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ep, session, useSession } from "../app/context";
+import { api, ep, session, useSession } from "../app/context";
 import { panel } from "../app/panel";
 import { isApiError } from "../api/http";
 import {
@@ -14,6 +14,9 @@ import {
   type TlsMode,
 } from "../api/panel";
 import { can } from "../state/session";
+import { setupApi } from "../setup/wizard";
+
+const setupAgain = () => setupApi(api).again();
 import { ago, sentence } from "../ui/format";
 import {
   Banner, Button, Card, Copyable, Empty, ListField, LoadError, Loading, NumberField, Page, Pill, SelectField, TabPanel, Tabs, TextField, Toggle,
@@ -73,7 +76,8 @@ export function SettingsPage() {
     nav({ hash: t }, { replace: true });
   };
   return (
-    <Page title="Panel settings" wide sub="Where the panel listens, its certificate, sign-in, hosted access, its look and its modules.">
+    <Page title="Panel settings" wide sub="Where the panel listens, its certificate, sign-in, hosted access, its look and its modules."
+      actions={me.owner && <Button size="s" onClick={() => void setupAgain().then(() => nav("/setup"))}>Run the setup again</Button>}>
       {!edit && <Banner tone="info" title="Read only">You can see these settings. Only the owner can change them.</Banner>}
       <Tabs label="Settings sections" idBase="wa-settings" tabs={TABS} value={tab} onChange={pick} />
       <TabPanel idBase="wa-settings" id={tab}>
@@ -558,19 +562,15 @@ function RelayTab({ edit }: { edit: boolean }) {
   const [tone, label] = RELAY_STATE[r?.state ?? "off"] ?? ["idle", r?.state ?? "?"];
   return (
     <>
-      <Card title="Hosted access" sub="Reach the panel at a kiln.nexus name without forwarding a port." actions={r && <Pill tone={tone}>{label}</Pill>}>
+      <Card title="Hosted access" sub="Your panel at a kiln.nexus name, with no port to open." actions={r && <Pill tone={tone}>{label}</Pill>}>
         <div className="wa-form wa-form-wide">
           <p className="wa-p" data-testid="kiln-nexus-note"><strong>{KILN_NEXUS_NOTE}</strong></p>
-          <p className="wa-p">The panel keeps one connection open to the relay, and the relay passes browsers' encrypted traffic through to it by name.
-            <strong> The relay never decrypts the traffic:</strong> TLS ends here, with a certificate whose key never leaves this server.</p>
           {status.isError ? <LoadError what="The relay's status" error={status.error} retry={() => void status.refetch()} />
             : !r ? <Loading />
             : (
               <>
                 <dl className="wa-kv">
-                  <dt>Name</dt><dd className="k-mono">{r.host || "not set"}</dd>
-                  <dt>Relay</dt><dd className="k-mono">{r.origin}</dd>
-                  {r.since && <><dt>Since</dt><dd>{when(r.since)}</dd></>}
+                  <dt>Name</dt><dd className="k-mono">{r.host ? <a href={`https://${r.host}/`} target="_blank" rel="noopener noreferrer">{r.host}</a> : "not set"}</dd>
                   {r.scheduled && (
                     <><dt>Scheduled</dt><dd>{r.scheduled.to === null ? "released" : `moved to the key ${shortFingerprint(r.scheduled.to)}`} on {when(r.scheduled.at)} (see the notice at the top: Undo)</dd></>
                   )}
@@ -587,13 +587,24 @@ function RelayTab({ edit }: { edit: boolean }) {
                   </Banner>
                 )}
                 {r.lastError && <Banner tone="err" title="The last connection failed">{sentence(r.lastError)}</Banner>}
-                {r.publicKey ? (
+                <details className="wa-details">
+                  <summary>Details</summary>
                   <div className="wa-stack">
-                    <span className="k-label">This panel's public key</span>
-                    <Copyable text={r.publicKey.trim()} block name="the public key" />
-                    <p className="wa-note">Not a secret. To register the name by hand instead of claiming it, the owner sends this key to the relay's operator.</p>
+                    <p className="wa-p">The panel keeps one connection open to the relay, and the relay passes browsers' encrypted traffic through to it by name.
+                      <strong> The relay never decrypts the traffic:</strong> TLS ends here, with a certificate whose key never leaves this server.</p>
+                    <dl className="wa-kv">
+                      <dt>Relay</dt><dd className="k-mono">{r.origin}</dd>
+                      {r.since && <><dt>Since</dt><dd>{when(r.since)}</dd></>}
+                    </dl>
+                    {r.publicKey ? (
+                      <>
+                        <span className="k-label">This panel's public key</span>
+                        <Copyable text={r.publicKey.trim()} block name="the public key" />
+                        <p className="wa-note">Not a secret. To register the name by hand instead of claiming it, the owner sends this key to the relay's operator.</p>
+                      </>
+                    ) : <p className="wa-note">The panel makes its key pair when hosted access is first switched on, or with the first claim link; its public key then shows here.</p>}
                   </div>
-                ) : <p className="wa-note">The panel makes its key pair when hosted access is first switched on, or with the first claim link; its public key then shows here.</p>}
+                </details>
               </>
             )}
         </div>
@@ -641,16 +652,8 @@ function ClaimCard({ r, edit }: { r: RelayStatus; edit: boolean }) {
   });
   const where = isClaimPages(r.namesPage) ? new URL(r.namesPage).host : "the relay";
   return (
-    <Card title="Claim this name" sub="With your Discord account, without waiting for the relay's operator.">
+    <Card title="Claim this name" sub="With your Discord account (a member of the Kiln Discord).">
       <div className="wa-form wa-form-wide">
-        <p className="wa-p">Members of the Kiln Discord server claim the name above for this server themselves, on the claim pages at {where} (one name per
-          Discord account). The link proves the claim comes from this server's key; it works once, for 15 minutes. Once the name is claimed, the
-          panel connects within seconds if hosted access is on; an unused claim lapses after an hour. A name already in use on another server
-          moves here 24 hours after the claim: that server keeps it until then and can undo the move.</p>
-        <dl className="wa-kv">
-          <dt>Name</dt><dd className="k-mono">{r.host || "not set"}</dd>
-          {r.fingerprint && <><dt>Key fingerprint</dt><dd className="k-mono" title={r.fingerprint}>{shortFingerprint(r.fingerprint)}</dd></>}
-        </dl>
         {!r.host && <p className="wa-note">Set the registered name below (such as myserver.kiln.nexus) and save first.</p>}
         {edit ? (
           <div className="wa-row">
@@ -667,10 +670,20 @@ function ClaimCard({ r, edit }: { r: RelayStatus; edit: boolean }) {
               <Copyable text={link.url} block name="the claim link" />
               <p className="wa-note">Open it yourself and sign in with the Discord account that should own the name: whoever opens it first can claim
                 the name for this server. It works until {when(link.expires)}.</p>
+              {r.fingerprint && <p className="wa-note">The claim page shows this server's key: <span className="k-mono" title={r.fingerprint}>{shortFingerprint(r.fingerprint)}</span></p>}
               {link.warnings.length > 0 && <ul className="wa-problems">{link.warnings.map((w) => <li key={w}>{sentence(w)}</li>)}</ul>}
             </div>
           </Banner>
         )}
+        <details className="wa-details">
+          <summary>Details</summary>
+          <div className="wa-stack">
+            <p className="wa-p">Members of the Kiln Discord server claim the name above for this server themselves, on the claim pages at {where} (one name per
+              Discord account). The link proves the claim comes from this server's key; it works once, for 15 minutes. Once the name is claimed, the
+              panel connects within seconds if hosted access is on; an unused claim lapses after an hour. A name already in use on another server
+              moves here 24 hours after the claim: that server keeps it until then and can undo the move.</p>
+          </div>
+        </details>
         {isClaimPages(r.namesPage) && (
           <p className="wa-note">Your name, its state, what is scheduled for it, releasing it and moving it to a new key: <a href={r.namesPage} target="_blank" rel="noopener noreferrer">Your panel name</a>.</p>
         )}

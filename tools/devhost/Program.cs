@@ -4,6 +4,14 @@
 // (vite's dev server proxies /api here: KWA_DEV_API=http://127.0.0.1:<port>) and its end-to-end tests (web/e2e).
 //
 //   dotnet run --project tools/devhost -- --server <dir> [--port 15800] [--web web/dist] [--tls off|self-signed]
+//       [--relay-origin <https origin>] [--relay-zone <zone>] [--acme-directory <https url>] [--acme-wait <seconds>]
+//       [--probe-via <host:port>]
+//
+// The setup wizard's end-to-end runs (0.1.2): --relay-origin and --relay-zone seed relay.json (off) with a test relay,
+// --acme-directory and --acme-wait seed acme.json with a test CA, as a harness does before the owner touches anything
+// (the wizard keeps both); --probe-via sends the wizard's address check to a test relay's browser side. The dev host
+// also runs the server console's kilnwarden commands from <dir>/kiln/control/console/*.cmd, answering in
+// <name>.result.json as Kiln's console folder does, so the console-only setup runs here too.
 //
 // <dir> is a server folder of its own (made if missing): kiln/data/kilnwarden gets settings.json (this port, TLS as
 // given, loopback) and auth.json (sign-in attempt budgets raised for tests) unless they exist. The log goes to
@@ -15,7 +23,8 @@ using Kilnwarden.Config;
 using Kilnwarden.Hosting;
 using Kilnwarden.Storage;
 
-string? server = null, web = null, tls = "off";
+string? server = null, web = null, tls = "off", relayOrigin = null, relayZone = null, acmeDirectory = null, probeVia = null;
+int? acmeWait = null;
 var port = 15800;
 for (var i = 0; i < args.Length; i++)
 {
@@ -26,6 +35,11 @@ for (var i = 0; i < args.Length; i++)
         case "--port": port = int.Parse(Next()); break;
         case "--web": web = Next(); break;
         case "--tls": tls = Next(); break;
+        case "--relay-origin": relayOrigin = Next(); break;
+        case "--relay-zone": relayZone = Next(); break;
+        case "--acme-directory": acmeDirectory = Next(); break;
+        case "--acme-wait": acmeWait = int.Parse(Next()); break;
+        case "--probe-via": probeVia = Next(); break;
         default:
             Console.Error.WriteLine($"unknown argument {args[i]}\nusage: devhost --server <dir> [--port 15800] [--web web/dist] [--tls off|self-signed]");
             return 2;
@@ -55,6 +69,15 @@ if (!store.Exists("auth.json")) store.WriteJson("auth.json", new AuthSettings
     // use the supported test budgets without changing the mod's safe defaults.
     SignIn = new() { AttemptsPerMinutePerIp = 600, AttemptsPerMinutePerAccount = 60, IpFreeFailures = 1000, AccountFreeFailures = 100 },
 });
+if ((relayOrigin ?? relayZone) is not null && !store.Exists("relay.json"))
+    store.WriteJson("relay.json", new Kilnwarden.Relay.RelaySettings { Enabled = false, Origin = relayOrigin ?? "https://frostdev.io", Zone = relayZone ?? "kiln.nexus" });
+if ((acmeDirectory is not null || acmeWait is not null) && !store.Exists("acme.json"))
+    store.WriteJson("acme.json", new Kilnwarden.Tls.Acme.AcmeSettings
+    {
+        Directory = acmeDirectory ?? Kilnwarden.Tls.Acme.AcmeSettings.LetsEncrypt, Dns01PropagationSeconds = acmeWait ?? 60,
+        // a test CA answers at once; a failure is retried after a minute, not an hour
+        MinRetryMinutes = acmeDirectory is null ? 60 : 1,
+    });
 // the mod folder's web/: a copy of the build (StaticFiles reads it once at start)
 var webDst = Path.Combine(mod, "web");
 if (Directory.Exists(webDst)) Directory.Delete(webDst, true);
@@ -71,10 +94,25 @@ else Console.Error.WriteLine($"devhost: no web app in {web} (bun run build in we
 
 var logFile = new StreamWriter(Path.Combine(server, "devhost.log"), append: true) { AutoFlush = true };
 var log = new ConsoleLog(logFile);
+var components = FirstPartyComponents.All(); // the mod's own component list (auth, identity, ACME, branding, ops, lane C, setup)
+if (probeVia is { } via)
+{
+    var (viaHost, viaPort) = (via[..via.LastIndexOf(':')], int.Parse(via[(via.LastIndexOf(':') + 1)..]));
+    var probe = new Kilnwarden.Setup.SelfProbe
+    {
+        Connect = async (_, _, ct) =>
+        {
+            var tcp = new System.Net.Sockets.TcpClient();
+            await tcp.ConnectAsync(viaHost, viaPort, ct);
+            return tcp.GetStream();
+        },
+    };
+    components = [.. components.Select(c => c is Kilnwarden.Setup.SetupComponent ? new Kilnwarden.Setup.SetupComponent(new Kilnwarden.Setup.SetupOptions { Probe = probe, ProbeEvery = TimeSpan.FromSeconds(2) }) : c)];
+}
 var host = new WebAdminHost(new WebAdminEnvironment
 {
     DataDirectory = data, ModDirectory = mod, ServerDirectory = server, Log = log, KilnVersion = "devhost",
-}, FirstPartyComponents.All()); // the mod's own component list (auth, identity, ACME, branding, ops, lane C)
+}, components);
 host.Start();
 try
 {
@@ -86,6 +124,40 @@ catch (Exception e)
     return 1;
 }
 log.Info($"devhost: ready on port {port} (server folder {server})");
+
+// Kiln's console folder: kiln/control/console/<name>.cmd -> <name>.result.json (the kilnwarden commands only)
+var consoleDir = Path.Combine(server, "kiln", "control", "console");
+Directory.CreateDirectory(consoleDir);
+using var consoleTimer = new Timer(_ =>
+{
+    foreach (var cmd in Directory.EnumerateFiles(consoleDir, "*.cmd"))
+    {
+        try
+        {
+            var lines = File.ReadAllLines(cmd).Where(l => l.Trim().Length > 0).ToList();
+            File.Delete(cmd);
+            var results = new System.Text.Json.Nodes.JsonArray();
+            foreach (var line in lines)
+            {
+                var answer = ConsoleCommands.Run(host, line.Trim());
+                results.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["line"] = line.Trim(), ["ok"] = answer is not null,
+                    ["output"] = new System.Text.Json.Nodes.JsonArray([.. (answer ?? "unknown command").Split('\n').Select(o => (System.Text.Json.Nodes.JsonNode)o)]),
+                });
+            }
+            var name = Path.GetFileNameWithoutExtension(cmd);
+            var tmp = Path.Combine(consoleDir, name + ".result.json.tmp");
+            File.WriteAllText(tmp, new System.Text.Json.Nodes.JsonObject { ["file"] = name + ".cmd", ["ok"] = true, ["results"] = results }.ToJsonString());
+            File.Move(tmp, Path.Combine(consoleDir, name + ".result.json"), overwrite: true);
+            log.Info($"devhost: console {name}.cmd ({lines.Count} line(s))");
+        }
+        catch (IOException)
+        {
+            // still being written: the next tick
+        }
+    }
+}, null, 500, 500);
 
 var done = new TaskCompletionSource();
 using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c =>

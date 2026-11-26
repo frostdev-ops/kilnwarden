@@ -36,7 +36,7 @@ public class RemoteSetupTests
         Assert.Equal(IPAddress.Loopback, h.Host.Server!.LocalEndPoint.Address);
         Assert.True(h.Log.Has("waits until the owner account exists"));
         Assert.DoesNotContain(h.Log.Lines, l => l.Contains("REMOTE SETUP"));
-        await Eventually.True(() => h.Log.Has("Open this link on this machine"), 5000, "the setup link for this machine");
+        await Eventually.True(() => h.Log.Has("On this computer, open "), 5000, "the setup link for this machine");
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class RemoteSetupTests
         await using var h = await AuthHarness.StartAsync(kap: false, beforeHost: Public(remoteSetup: true));
         Assert.Equal(IPAddress.Any, h.Host.Server!.LocalEndPoint.Address);
         Assert.True(h.Log.Has("REMOTE SETUP"), string.Join("\n", h.Log.Lines));
-        await Eventually.True(() => h.Log.Has("Open this link from any machine (settings.json remoteSetup is on)"), 5000, "the remote setup link");
+        await Eventually.True(() => h.Log.Has("From any browser, open "), 5000, "the remote setup link");
         // still only with the one-time token
         using var b = h.NewClient();
         var bad = await b.PostAsync("/api/auth/setup", new { token = new string('A', 43), name = "owner", password = AuthHarness.Password });
@@ -73,11 +73,11 @@ public class RemoteSetupTests
         await using var h = await AuthHarness.StartAsync(kap: false);
         await Eventually.True(() => h.Host.Endpoints.Count > 0, 5000, "listening");
         var status = ConsoleCommands.Status(h.Host);
-        Assert.Contains($"listening at http://127.0.0.1:{h.Port}/", status);
-        Assert.Contains("owner account: not yet", status);
+        Assert.Contains($"[x] Running: http://127.0.0.1:{h.Port}/", status);
+        Assert.Contains("[ ] Owner account", status);
         var answer = ConsoleCommands.Setup(h.Host);
-        Assert.Contains("Open this link on this machine", answer);
-        Assert.Contains("remoteSetup", answer); // the hint for a server without a browser of its own
+        Assert.Contains("On this computer, open ", answer);
+        Assert.Contains("kilnwarden setup hosted", answer); // the way for a server without a browser of its own
         var token = Token(answer);
         Assert.Equal(43, token.Length);
         Assert.NotEqual(Token(string.Join("\n", h.Log.Lines)), token);
@@ -87,8 +87,8 @@ public class RemoteSetupTests
         using var b = h.NewClient();
         var ok = await b.PostAsync("/api/auth/setup", new { token, name = "owner", password = AuthHarness.Password });
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
-        Assert.StartsWith("The owner account exists: sign in at", ConsoleCommands.Setup(h.Host));
-        Assert.Contains("owner account: yes", ConsoleCommands.Status(h.Host));
+        Assert.StartsWith("Set up. Sign in at", ConsoleCommands.Setup(h.Host));
+        Assert.Contains("[x] Owner account", ConsoleCommands.Status(h.Host));
         Assert.Contains("not running", ConsoleCommands.Setup(null));
     }
 
@@ -110,15 +110,14 @@ public class RemoteSetupTests
             })(h);
             new Kilnwarden.Storage.DataStore(h.DataDir).WriteJson("relay.json",
                 new RelaySettings { Enabled = true, Origin = $"https://127.0.0.1:{port}", Host = "alpha.kiln.nexus" });
-        }, extra: [new RelayComponent()]);
+        }, extra: [new RelayComponent(), new Kilnwarden.Setup.SetupComponent()]);
         await Eventually.True(() => h.Log.Has("https://alpha.kiln.nexus/setup#token="), 8000, "the relay's address in the setup link");
         var relay = h.Host.Services.Get<RelayStatus>();
         await Eventually.True(() => relay.Describe().State == "error", 8000, "a relay attempt before the owner exists");
         Assert.Contains($"cannot connect to 127.0.0.1:{port}: outbound HTTPS is blocked here", relay.Describe().LastError);
         Assert.Single(h.Log.Lines, l => l.Contains("relay for alpha.kiln.nexus: cannot connect")); // once, not every 4 s
-        Assert.StartsWith("No owner account yet. Open this link from any machine", ConsoleCommands.Setup(h.Host));
-        Assert.Contains("https://alpha.kiln.nexus/setup#token=", ConsoleCommands.Setup(h.Host));
-        Assert.Contains("relay alpha.kiln.nexus: error (cannot connect", ConsoleCommands.Status(h.Host));
+        Assert.StartsWith("Kilnwarden: set up your panel (about 2 minutes).\n  From any browser, open https://alpha.kiln.nexus/setup#token=", ConsoleCommands.Setup(h.Host));
+        Assert.Contains($"[!] Connected to hosted access: This server can't reach 127.0.0.1.", ConsoleCommands.Status(h.Host));
     }
 
     [Fact]

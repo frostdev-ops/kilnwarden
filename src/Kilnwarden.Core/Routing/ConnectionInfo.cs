@@ -17,4 +17,8 @@ public sealed class ConnectionInfo
 
     /// <summary>TLS details; null on a plain listener.</summary>
     public TlsConnectionInfo? Tls { get; init; }
+
+    /// <summary>The connection came through the relay (hosted access): its peer is the browser address the relay
+    /// announced, not a TCP peer of this machine.</summary>
+    public bool Relayed { get; init; }
 }

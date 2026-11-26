@@ -14,6 +14,8 @@
     <InternalsVisibleTo Include="$(WebAdminNamespace).Offline" />
     <InternalsVisibleTo Include="$(WebAdminNamespace).Fuzz" />
     <InternalsVisibleTo Include="$(WebAdminNamespace)" />
+    <!-- tools/devhost (not shipped): the end-to-end tests' hooks (the setup wizard's self-check through a test relay) -->
+    <InternalsVisibleTo Include="$(WebAdminNamespace).DevHost" />
   </ItemGroup>
   <ItemGroup>
     <!-- the public extension API (the mod's export): the engine implements it (Extensions/) -->

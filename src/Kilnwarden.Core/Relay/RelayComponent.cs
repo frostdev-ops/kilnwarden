@@ -33,13 +33,18 @@ internal sealed class RelayComponent : IWebAdminComponent
     private Task? _run;
     private string _state = "waiting";
     private string? _lastError;
+    private string? _problem;
     private string? _since;
+    private RelayStatus? _status;
 
-    private void SetState(string state, string? error = null)
+    private void SetState(string state, string? error = null, string? problem = null)
     {
+        var was = Volatile.Read(ref _state);
         Volatile.Write(ref _state, state);
         if (error is not null) Volatile.Write(ref _lastError, error);
+        Volatile.Write(ref _problem, state == "connected" ? null : problem ?? Volatile.Read(ref _problem));
         Volatile.Write(ref _since, _builder.Environment.Time.GetUtcNow().ToString("O"));
+        if (state == "connected" && was != "connected") _status?.RaiseConnected();
     }
 
     public string Name => "relay";
@@ -50,10 +55,11 @@ internal sealed class RelayComponent : IWebAdminComponent
         _settings = builder.SettingsFile<RelaySettings>("relay.json", RelaySettings.Validate);
         EditableSettings.Of(builder.Services).Add(EditableFile.For("relay", "Hosted access (relay)", _settings));
         builder.Services.Add(_settings);
-        builder.Services.Add(new RelayStatus(() =>
+        builder.Services.Add(_status = new RelayStatus(() =>
         {
             var s = _settings.Current;
-            return new RelayStatus.Info(s.Enabled, s.Host, !s.Enabled ? "off" : Volatile.Read(ref _state), Volatile.Read(ref _lastError));
+            var state = !s.Enabled ? "off" : Volatile.Read(ref _state);
+            return new RelayStatus.Info(s.Enabled, s.Host, state, Volatile.Read(ref _lastError), state == "connected" ? null : Volatile.Read(ref _problem));
         }));
         var claims = new RelayClaims(MakeClaimLink);
         builder.Services.Add(claims);
@@ -204,7 +210,7 @@ internal sealed class RelayComponent : IWebAdminComponent
     {
         var server = _builder.Settings.Current;
         var waiting = new List<string>();
-        if (!Hosting.ISetupState.RemoteReachAllowed(_builder.SetupState, server)) waiting.Add("an owner account (or settings.json remoteSetup for the first-run setup)");
+        if (!RemoteReach(server)) waiting.Add("an owner account (or the console's kilnwarden setup for the first-run setup)");
         if (server.Tls.Mode == TlsMode.Off) waiting.Add("TLS (settings.json tls.mode is off)");
         if (s.Host.Length > 0 && !server.AllowedHosts.Contains(s.Host, StringComparer.OrdinalIgnoreCase) && !server.Tls.Hostnames.Contains(s.Host, StringComparer.OrdinalIgnoreCase))
             waiting.Add($"{s.Host} in settings.json tls.hostnames");
@@ -294,7 +300,7 @@ internal sealed class RelayComponent : IWebAdminComponent
                     catch (Exception e) when (key is null && e is ArgumentException or System.Security.Cryptography.CryptographicException)
                     {
                         // relay-key.pem is there but unusable (review S8): say what to do, and keep trying in case it is fixed
-                        SetState("error", "relay-key.pem cannot be read: delete relay-key.pem and relay-public.pem, then register the new public key");
+                        SetState("error", "relay-key.pem cannot be read: delete relay-key.pem and relay-public.pem, then register the new public key", "key");
                         _builder.Log.Warn($"{Product.Name} relay for {settings.Host}: relay-key.pem cannot be read ({e.GetType().Name}). To make a new key, " +
                                           "delete relay-key.pem and relay-public.pem in the panel's data folder; the new public key then needs registering again.");
                     }
@@ -310,7 +316,7 @@ internal sealed class RelayComponent : IWebAdminComponent
                         // in plain words, once per change (a retry every 4 s would fill kiln.log with the same line)
                         var why = RelayErrors.Explain(e, settings, past);
                         var again = Volatile.Read(ref _lastError) == why && Volatile.Read(ref _state) == "error";
-                        SetState("error", why);
+                        SetState("error", why, RelayErrors.Kind(e, past));
                         if (!again) _builder.Log.Warn($"{Product.Name} relay for {settings.Host}: {why}; retrying every 4 s");
                     }
                 }
@@ -320,10 +326,15 @@ internal sealed class RelayComponent : IWebAdminComponent
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
+    /// <summary>The panel may be reached through the relay: the owner exists (or settings.json remoteSetup), or the
+    /// server console's hosted setup is open (0.1.2: <c>kilnwarden setup hosted</c>, an hour at a time).</summary>
+    private bool RemoteReach(ServerSettings server) =>
+        Hosting.ISetupState.RemoteReachAllowed(_builder.SetupState, server) || _builder.Services.TryGet<Setup.HostedSetupWindow>()?.Open == true;
+
     private bool CanRelay(RelaySettings settings)
     {
         var server = _builder.Settings.Current;
-        return Hosting.ISetupState.RemoteReachAllowed(_builder.SetupState, server) && server.Tls.Mode != TlsMode.Off &&
+        return RemoteReach(server) && server.Tls.Mode != TlsMode.Off &&
             (server.AllowedHosts.Contains(settings.Host, StringComparer.OrdinalIgnoreCase) ||
              server.Tls.Hostnames.Contains(settings.Host, StringComparer.OrdinalIgnoreCase));
     }

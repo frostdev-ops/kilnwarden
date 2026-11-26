@@ -165,6 +165,7 @@ public sealed class IdentityComponent : IWebAdminComponent
         _log = b.Log;
         _settings = b.SettingsFile<IdentitySettings>("identity.json", IdentitySettings.Validate);
         Config.EditableSettings.Of(b.Services).Add(Config.EditableFile.For("identity", "Steam and Discord sign-in", _settings));
+        b.Services.Add(_settings); // the setup wizard's Discord step (0.1.2)
         var state = b.Data.ReadJson<State>(StateFile);
         if (state is not { PanelId.Length: 32 } || !state.PanelId.All(char.IsAsciiHexDigitLower))
         {

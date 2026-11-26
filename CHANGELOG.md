@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.2 (2026-11-26)
+
+Setting up is now a step-by-step wizard, one question per page, and nothing has to be edited by hand.
+
+### Setup
+- **The first start says one thing**, in three lines in kiln.log and the server console: open the setup link on this
+  computer, or, on a server with no browser, type `kilnwarden setup hosted <name>` in its console.
+- **A setup wizard:** your account, then how you will open your panel (hosted access at `<name>.kiln.nexus` is
+  preselected; the Kiln Launcher; or your own web address). For hosted access: pick a name (checked as you type), press
+  **Claim with Discord**, and watch a checklist (Connected, Claimed, Secure, Ready) until your panel answers at its
+  address. When a step fails, it says why and what to do. Optional Discord sign-in for helpers, then the address to
+  bookmark. The wizard writes every setting itself (hosted access, the certificate's settings), comes back to where you
+  were after a restart, and **Panel settings > Run the setup again** starts it over.
+- **From the server console alone** (a rented server): `kilnwarden setup hosted <name>` sets up hosted access and gives
+  the claim link; `kilnwarden setup` then gives the link to create your account at `https://<name>.kiln.nexus`, once
+  the name has its certificate. `kilnwarden status` is a checklist of what is done and what to do next.
+- **The link in kiln.log only works on the server's own computer** (unless you set `remoteSetup`, as before): a log you
+  share for help never lets anyone create the account over the internet. The console's account link works once, for 30
+  minutes, and is never written to kiln.log.
+- The certificate for a hosted name is ordered as soon as the name is claimed, not before (an order before the claim
+  failed and waited an hour).
+- The page on the server's own computer (`https://127.0.0.1:<port>`) keeps its certificate when the Let's Encrypt one
+  arrives, so it keeps working; your panel's name gets the new certificate. The Kiln Launcher's pin stays the same.
+
+### Leftovers from the old name
+- While `kiln/mods/kiln-webadmin` (Kiln Web Admin, the old name) keeps Kilnwarden off, kiln.log, every console answer
+  and the panel's own address say exactly which folder to delete.
+
+### The panel
+- Panel settings > Hosted access shows less at once: the relay's address, the public key and the long explanations
+  are behind **Details**; the key to compare with the claim page shows with the claim link.
+
 ## 0.1.1 (2026-11-26)
 
 Hosted access is live, and so is Discord sign-in. The relay, the claim pages at `https://claim.kiln.nexus` and the

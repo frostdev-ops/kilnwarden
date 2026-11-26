@@ -101,8 +101,8 @@ export function SignInPage() {
     <AuthFrame title="Sign in" section="Sign in">
       {notice && <Banner tone="info" title={notice} />}
       {status && !status.ownerExists ? (
-        <Banner tone="warn" title="No owner account yet">
-          Open the one-time setup link from the server's kiln.log on this machine (it looks like <code>…/setup#token=…</code>), or use "Open web panel" in a Kiln Launcher that knows Kilnwarden.
+        <Banner tone="warn" title="This panel isn't set up yet">
+          Open the setup link from your server. For a new one, type <code>kilnwarden setup</code> in the server console.
         </Banner>
       ) : (
         <form className="wa-form" onSubmit={(e) => run(e, () => signIn(name.trim(), password))}>

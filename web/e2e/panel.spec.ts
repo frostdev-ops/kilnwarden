@@ -1,3 +1,4 @@
+import { ownerThroughWizard } from './wizard-flow';
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -35,12 +36,9 @@ test('setup consumes fragment and creates owner', async ({ page }) => {
   const token = log.match(/\/setup#token=([^\s]+)/)?.[1];
   expect(token).toBeTruthy();
   await page.goto(`/setup#token=${token}`);
-  await expect(page.getByRole('heading', { name: 'Create the owner account' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Set up your panel' })).toBeVisible();
   expect(new URL(page.url()).hash).toBe('');
-  await page.getByLabel('Owner name', { exact: true }).fill(name);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByLabel('Password again', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Create the owner account' }).click();
+  await ownerThroughWizard(page, name, password);
   await expect(page.getByRole('heading', { name: 'Kilnwarden', exact: true })).toBeVisible();
 });
 test('step 2 pages open from the navigation, and the overview shows the dashboard widgets', async ({ page }) => {

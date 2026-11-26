@@ -171,7 +171,7 @@ internal static class AuthRoutes
         ["ip"] = s.Ip, ["userAgent"] = s.UserAgent, ["via"] = s.Via, ["twoFactor"] = s.Mfa, ["current"] = s.Handle == current,
     })]);
 
-    public static ClientInfo Client(RequestContext ctx) => new(ctx.ClientAddress, ctx.Request.Headers.Get("User-Agent") ?? "");
+    public static ClientInfo Client(RequestContext ctx) => new(ctx.ClientAddress, ctx.Request.Headers.Get("User-Agent") ?? "") { Relayed = ctx.Connection.Relayed };
 
     /// <summary>The handle of the session this request came with (a new sign-in replaces it).</summary>
     private static string? Current(RequestContext ctx) => (ctx.User as WebPrincipal)?.Session.Handle;

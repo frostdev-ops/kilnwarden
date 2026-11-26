@@ -1,4 +1,4 @@
-// The routes. Public: /signin, /setup (#token=), /launcher (#secret=). Everything else is behind the sign-in gate, in
+// The routes. Public: /signin, /setup (the setup wizard: #token= before the owner exists, the owner's pages after), /launcher (#secret=). Everything else is behind the sign-in gate, in
 // the shell: the overview, the admin pages (@kiln/admin-ui: /servers/this/admin/<page>, Configs at
 // /servers/this/configs), the web-only pages (Commands, Player activity, Users and roles, Audit, Panel settings...) and
 // extension modules' pages.
@@ -18,7 +18,9 @@ import { SettingsPage } from "./pages/Settings";
 import { MetricsPage } from "./pages/Metrics";
 import { PublicPageSettingsPage } from "./pages/PublicPageSettings";
 import { WebhooksPage } from "./pages/Webhooks";
-import { LauncherPage, SetupPage, SignInPage } from "./pages/Public";
+import { LauncherPage, SignInPage } from "./pages/Public";
+import { SetupWizard } from "./setup/SetupWizard";
+import { SetupPending } from "./setup/SetupPending";
 import { ModsPage } from "./pages/Mods";
 import { SavedCommandsPage } from "./pages/SavedCommands";
 import { SchedulesPage } from "./pages/Schedules";
@@ -46,10 +48,10 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/signin" element={<SignInPage />} />
-          <Route path="/setup" element={<SetupPage />} />
+          <Route path="/setup" element={<SetupWizard />} />
           <Route path="/launcher" element={<LauncherPage />} />
           <Route element={<RequireSignIn><Shell /></RequireSignIn>}>
-            <Route index element={<HomePage />} />
+            <Route index element={<SetupPending><HomePage /></SetupPending>} />
             <Route path={`servers/${SERVER_ID}/admin/*`} element={<AdminArea><div className="wa-admin"><AdminRoutes serverId={SERVER_ID} /></div></AdminArea>} />
             {/* AdminConfigsPage takes its server from the route's :id */}
             <Route path="servers/:id/configs" element={<OnlyThisServer><AdminArea><div className="wa-admin"><AdminConfigsPage /></div></AdminArea></OnlyThisServer>} />

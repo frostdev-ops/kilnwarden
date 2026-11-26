@@ -1,11 +1,24 @@
 # Kilnwarden
 
+**A web admin panel for your Enshrouded dedicated server**, as a [Kiln](https://github.com/frostdev-ops/kiln) mod. Run
+your server from any browser, on a phone or a desktop. Players join with an unmodded game.
+
+## Quick start
+
+You need [Kiln](https://github.com/frostdev-ops/kiln) 0.2.0-dev.31.10 or later on the server.
+
+1. Stop the server.
+2. Unzip `kilnwarden-<version>.zip` into the server's `kiln/mods/` folder.
+3. Start the server.
+4. Open the setup link from `kiln/logs/kiln.log` (it ends in `/setup#token=…`).
+   No browser on the server, such as a rented one? Type `kilnwarden setup hosted <a name>` in its console instead.
+5. Answer the setup's few questions. Your panel opens at `https://<name>.kiln.nexus`.
+
+Stuck? Type `kilnwarden status` in the server console: it says what is done and what to do next.
+
 ![Kilnwarden](art/nexus_banner_1920x480.png)
 
-**Kilnwarden is a web admin panel for Enshrouded dedicated servers**, as a [Kiln](https://github.com/frostdev-ops/kiln)
-mod. It runs inside your server and serves the panel over HTTPS, so you run the server from any browser, on a phone or
-a desktop, with no extra program to install or keep running. Players join with an unmodded game.
-
+Kilnwarden runs inside your server and serves the panel over HTTPS, with no extra program to install or keep running.
 It has the same admin pages as the Kiln Launcher, plus accounts and roles, every command as a form, schedules, mod
 updates, player activity, metrics, webhooks, an audit log and an optional public page.
 
@@ -60,27 +73,51 @@ The screenshots use demo data: a test server with made-up players.
 - Players need nothing: Kilnwarden runs only on the server.
 - A current browser (Chrome, Edge, Firefox or Safari) on whatever device you use to run the server.
 
-## Install
+## Install and setup, in detail
 
-1. Stop the server.
-2. Unzip `kilnwarden-<version>.zip` into the server's `kiln/mods/` folder, so that
-   `kiln/mods/kilnwarden/kiln.mod.json` exists.
-3. Start the server. `kiln/logs/kiln.log` shows `Kilnwarden <version> started`, the panel's address, the certificate's
-   fingerprint and a one-time **setup link**. The address is `https://127.0.0.1:<query port + 100>/`, so
-   `https://127.0.0.1:15737/` with the default ports.
-4. Open the setup link on the server's machine and create the owner account. The first certificate is self-signed, so
-   the browser asks you to accept it: check that the fingerprint it shows is the one in `kiln.log`.
-5. Turn on two-factor sign-in in **My account**, and add the people who help you in **Users and roles**.
+**Install.** The zip holds one folder, `kilnwarden/`: unzipped into the server's `kiln/mods/`, it is
+`kiln/mods/kilnwarden/kiln.mod.json`. That is the whole install. Neither the Kiln Launcher nor `kilnctl` installs a
+mod from a release URL (as of Kiln 0.2.0-dev.31.15: `kilnctl library import` takes a downloaded file, and the
+launcher's catalog is Nexus Mods), so download the zip from the GitHub release or Nexus Mods and unzip it. Once
+Kilnwarden runs, its own Mods page updates it (and other mods) from a release URL.
 
-The panel only answers on the server's own machine until you choose otherwise, so nobody else can reach it before you
-have an owner account.
+**Setup.** At its first start, `kiln/logs/kiln.log` and the server console say one thing, in three lines:
 
-**With the Kiln Launcher**, **Servers > (your server) > Open web panel** opens the panel and signs you in as the owner,
-for a local server and for a remote one over its SSH connection. Before an owner exists, it opens the setup page.
-The button needs Kiln 0.2.0-dev.31.14 or newer: earlier launchers look for the mod's old name. With an older launcher,
-use the setup link from `kiln.log`.
+```
+Kilnwarden: set up your panel (about 2 minutes).
+  On this computer, open https://127.0.0.1:15737/setup#token=…
+  No browser on this computer (a rented server)? In the server console, type: kilnwarden setup hosted <a name for your panel>
+```
 
-No browser on the server's machine, for example a rented game server with FTP only? See the table below.
+The link opens the setup wizard, one question per page:
+
+1. **Your account:** a name and a password. There is no default password. The browser warns once about the
+   connection on your own computer (the panel's first certificate is its own); that is expected there.
+2. **How will you open your panel?** Hosted access at `https://<name>.kiln.nexus` is preselected: any device, nothing to
+   set up on your router. Or the Kiln Launcher (Servers > your server > **Open web panel**), or your own web address
+   (an open port, a domain name and a free Let's Encrypt certificate).
+3. **Hosted access:** pick a name, press **Claim with Discord** (you need to be in the
+   [Kiln Discord](https://discord.gg/7pjr8SMTfU)), and watch the checklist: Connected, Claimed, Secure, Ready. It takes
+   a minute or two. When a step fails, the page says why and what to do.
+4. Optionally, Discord sign-in for your helpers, then the address to bookmark.
+
+The wizard comes back to where you were after a restart, and **Panel settings > Run the setup again** starts it over.
+The **Kiln Launcher**'s **Open web panel** (Kiln 0.2.0-dev.31.14 or newer) opens the wizard too, signed in.
+
+**From the server console alone** (a rented server with FTP and a web console):
+
+1. `kilnwarden setup hosted myserver` sets everything up and answers with a claim link. Open it and claim the name
+   with Discord.
+2. About two minutes later, `kilnwarden setup` answers with a link to create your account at
+   `https://myserver.kiln.nexus`. Open it and you are in.
+
+`kilnwarden status` shows the checklist at any time. Without a web console, put the command in a text file and upload it
+as `kiln/control/console/<anything>.cmd` over FTP; the answer appears next to it as `<anything>.result.json`.
+
+How the console-only setup stays safe: until the owner exists, only the server console can open the panel to the
+internet, for an hour at a time, through the relay only (no port opens). The account link it gives works once, for 30
+minutes, and only once the name has its trusted certificate. The link in `kiln.log` never creates the account over the
+internet, so a log you share for help opens nothing. Neither link is written to `kiln.log`.
 
 ## Pick your route
 
@@ -99,16 +136,16 @@ may see.
 The Kiln Launcher routes need Kiln 0.2.0-dev.31.14 or newer (see Install). You can also put the panel behind your own
 reverse proxy: turn its TLS off and mark the proxy as trusted.
 
-For the first sign-in on a server you can only reach over FTP, the setup link is in `kiln/logs/kiln.log`, or comes
-from the console command `kilnwarden setup` through Kiln's console folder (`kiln/control/console/`). Set
-`"remoteSetup": true` in `kiln/data/kilnwarden/settings.json` to open the setup page to other machines before the
-owner exists; it stays off unless you turn it on.
+For a server you can only reach over FTP, `kilnwarden setup hosted <name>` does the whole setup from the console
+(above). The older switch `"remoteSetup": true` in `kiln/data/kilnwarden/settings.json` still opens the setup page to
+other machines before the owner exists; it stays off unless you turn it on.
 
 ## Security in plain words
 
 - **No default password.** The owner account is made with a one-time setup link from the server's log or console.
 - **It starts closed.** The panel listens only on the server's own machine until there is an owner and you open it up.
-  A public address makes the log warn loudly.
+  Before that, only the server console's `kilnwarden setup hosted` makes it reachable, through hosted access, for an
+  hour at a time, and only with the console's one-time link. A public address makes the log warn loudly.
 - **Strong sign-in.** Passwords are stored as PBKDF2 hashes (600,000 rounds). Two-factor sign-in, with recovery
   codes, can be required per role. A second password or code check comes before sensitive changes.
 - **Least privilege.** Each role sees and does only what it is allowed to, down to single commands. Moderators can't
@@ -136,8 +173,8 @@ That is what makes it work on rented game servers, behind CGNAT, with IPv6 only 
 - **frostdev never decrypts your traffic.** The relay reads only the name the browser asks for and passes the
   encrypted bytes through. TLS ends inside your game server, with your panel's own Let's Encrypt certificate, whose
   key never leaves your server, so the relay has nothing to decrypt with.
-- **You claim your name with Discord.** In **Panel settings > Hosted access** (or with the console command
-  `kilnwarden claim`), the panel makes a one-time claim link signed with its own key. Open it on the claim pages,
+- **You claim your name with Discord.** The setup wizard (or **Panel settings > Hosted access**, or the console commands
+  `kilnwarden setup hosted <name>` and `kilnwarden claim`) makes a one-time claim link signed with the panel's own key. Open it on the claim pages,
   `https://claim.kiln.nexus`, sign in with a Discord account that is a member of the Kiln Discord, and claim the name.
   Each Discord account holds one name.
 - **Your server can undo a move.** Moving your name to another server, or releasing it, waits 24 hours. Until then the

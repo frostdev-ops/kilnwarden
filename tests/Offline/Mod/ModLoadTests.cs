@@ -101,8 +101,8 @@ public sealed class ModLoadTests
         var status = Console(kiln, "status", "kilnwarden status");
         var text = status.ToJsonString();
         Assert.True(status["ok"]!.GetValue<bool>(), text);
-        Assert.Contains($"listening at https://127.0.0.1:{port}/", text);
-        Assert.Contains("owner account: not yet", text);
+        Assert.Contains($"[x] Running: https://127.0.0.1:{port}/", text);
+        Assert.Contains("[ ] Owner account", text);
 
         var setup = Console(kiln, "setup", "kilnwarden setup");
         var line = string.Join("\n", setup["results"]![0]!["output"]!.AsArray().Select(o => o!.GetValue<string>()));
@@ -121,14 +121,67 @@ public sealed class ModLoadTests
                 $"Content-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n{body}");
             Assert.Equal(200, r.Status);
         }
-        Assert.Contains("owner account: yes", Console(kiln, "status2", "kilnwarden status").ToJsonString());
+        Assert.Contains("[x] Owner account", Console(kiln, "status2", "kilnwarden status").ToJsonString());
         // the old first word (Kiln Web Admin's) still answers
-        Assert.Contains("owner account: yes", Console(kiln, "status3", "webadmin status").ToJsonString());
-        Assert.Contains("The owner account exists", Console(kiln, "setup2", "kilnwarden setup").ToJsonString());
+        Assert.Contains("[x] Owner account", Console(kiln, "status3", "webadmin status").ToJsonString());
+        Assert.Contains("Your owner account exists. Finish the setup in the panel", Console(kiln, "setup2", "kilnwarden setup").ToJsonString());
         // only the console may: a player in chat is refused (CommandPermission.Console)
         var asPlayer = Console(kiln, "player", "#as steam 76561190000000002 Gus\nkilnwarden setup");
         Assert.True(asPlayer["results"]![0]!["denied"]!.GetValue<bool>(), asPlayer.ToJsonString());
         kiln.Unload(mod);
+    }
+
+    /// <summary>0.1.2: the console-only hosted setup through Kiln's own command parser and console folder, as over FTP:
+    /// the arguments reach the command, the answer holds the claim link, Kiln's log never does. The relay's and the CA's
+    /// addresses point nowhere (nothing leaves this machine).</summary>
+    [Fact]
+    public void The_console_folder_runs_setup_hosted_with_its_name()
+    {
+        using var server = new TempDir();
+        using var mods = new TempDir();
+        var folder = ModFolder(mods);
+        var port = FreePort();
+        using var kiln = new KilnHarness(new KilnHarnessOptions { ServerDirectory = server.Path });
+        kiln.WriteServerConfig($"{{\"queryPort\": {port - 100}}}");
+        var data = Path.Combine(kiln.DataDirectory, "kilnwarden");
+        Directory.CreateDirectory(data);
+        File.WriteAllText(Path.Combine(data, "relay.json"), "{\"enabled\": false, \"origin\": \"https://127.0.0.1:9\"}");
+        File.WriteAllText(Path.Combine(data, "acme.json"), "{\"format\": 1, \"directory\": \"https://127.0.0.1:9/directory\"}");
+        var mod = kiln.LoadFolder(folder);
+        kiln.Step(2);
+        Assert.True(mod.IsLoaded, mod.Error ?? kiln.DumpLogs());
+        WaitForLog(kiln, "panel at ", 1);
+        WaitForLog(kiln, "set up your panel (about 2 minutes)", 1);
+        Assert.Contains(kiln.FindLogs("In the server console, type: kilnwarden setup hosted <a name for your panel>"), _ => true);
+
+        string Answer(JsonNode r) => string.Join("\n", r["results"]![0]!["output"]!.AsArray().Select(o => o!.GetValue<string>()));
+        var usage = Answer(Console(kiln, "usage", "kilnwarden setup hosted"));
+        Assert.StartsWith("Type: kilnwarden setup hosted <name>", usage);
+        Assert.StartsWith("Use at least 3 characters.", Answer(Console(kiln, "short", "kilnwarden setup hosted ab")));
+        Assert.Contains("kilnwarden setup hosted <name>", Answer(Console(kiln, "other", "kilnwarden setup nonsense")));
+        var answer = Answer(Console(kiln, "hosted", "kilnwarden setup hosted My-Panel"));
+        Assert.Contains("your panel's address will be https://my-panel.kiln.nexus/", answer);
+        Assert.Contains("https://claim.kiln.nexus/claim?v=1&host=my-panel.kiln.nexus&", answer);
+        Assert.DoesNotContain("claim?v=1", kiln.DumpLogs());
+        var relay = JsonNode.Parse(File.ReadAllText(Path.Combine(data, "relay.json")))!;
+        Assert.Equal(("my-panel.kiln.nexus", true, "https://127.0.0.1:9"), (relay["host"]!.GetValue<string>(), relay["enabled"]!.GetValue<bool>(), relay["origin"]!.GetValue<string>()));
+        var status = Answer(Console(kiln, "status", "kilnwarden status"));
+        Assert.Contains("Connected to hosted access", status); // trying (nobody answers at the test relay)
+        Assert.Contains("[x] Running: https://my-panel.kiln.nexus/", status);
+        Assert.Contains("[ ] Owner account", status);
+        kiln.Unload(mod);
+    }
+
+    /// <summary>The page at the panel's address while the old copy keeps it off: its whole HTTPS answer.</summary>
+    private static async Task<string> NoticeAsync(int port)
+    {
+        using var tcp = new TcpClient();
+        await tcp.ConnectAsync(IPAddress.Loopback, port);
+        await using var ssl = new SslStream(tcp.GetStream(), false, (_, _, _, _) => true);
+        await ssl.AuthenticateAsClientAsync("localhost");
+        await ssl.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"GET / HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"));
+        using var r = new StreamReader(ssl);
+        return await r.ReadToEndAsync();
     }
 
     /// <summary>Stands in for a Kiln Web Admin 0.1.0 test build (mod id kiln-webadmin) that Kiln runs.</summary>
@@ -143,7 +196,7 @@ public sealed class ModLoadTests
     /// (a profile entry outside kiln/mods, or a folder switched off after it loaded): Kilnwarden neither moves the old
     /// data folder from under it nor takes the port.</summary>
     [Fact]
-    public void A_copy_of_the_old_mod_that_Kiln_runs_keeps_the_panel_off_and_its_data_folder_in_place()
+    public async Task A_copy_of_the_old_mod_that_Kiln_runs_keeps_the_panel_off_and_its_data_folder_in_place()
     {
         using var server = new TempDir();
         using var mods = new TempDir();
@@ -161,16 +214,23 @@ public sealed class ModLoadTests
 
         var mod = kiln.LoadFolder(folder);
         kiln.Step(2);
-        Assert.True(kiln.FindLogs("this panel's old name, is still installed").Any(), kiln.DumpLogs());
+        Assert.True(kiln.FindLogs("Kiln Web Admin, its old name, is still installed. Stop the server, delete the folder kiln/mods/kiln-webadmin").Any(), kiln.DumpLogs());
         Assert.False(kiln.HasLog("starting in the background", mod.Id), kiln.DumpLogs());
         Assert.Equal("{}", File.ReadAllText(Path.Combine(oldData, "accounts.json")));
         Assert.False(Directory.Exists(Path.Combine(kiln.DataDirectory, "kilnwarden")));
+        // 0.1.2: the console and the panel's own address say exactly what to delete, instead of nothing answering
+        var answer = Console(kiln, "status", "kilnwarden status").ToJsonString();
+        Assert.Contains("delete the folder kiln/mods/kiln-webadmin", answer);
+        Assert.Contains("delete the folder kiln/mods/kiln-webadmin", Console(kiln, "setup", "kilnwarden setup").ToJsonString());
+        var page = await NoticeAsync(port);
+        Assert.Contains("503", page.Split('\n')[0]);
+        Assert.Contains("delete the folder kiln/mods/kiln-webadmin", page);
+        kiln.Unload(mod);
         using (var free = new TcpListener(IPAddress.Loopback, port))
         {
-            free.Start(); // nobody took the panel's port
+            free.Start(); // the notice let go of the panel's port
             free.Stop();
         }
-        kiln.Unload(mod);
         kiln.Unload(old);
     }
 

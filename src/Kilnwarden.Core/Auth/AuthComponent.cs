@@ -75,6 +75,7 @@ public sealed class AuthComponent : IWebAdminComponent
         _log = log;
         _serverSettings = b.Settings;
         _relay = () => b.Services.TryGet<SettingsStore<Relay.RelaySettings>>()?.Current;
+        _auth.RemoteSetupOn = () => b.Settings.Current.RemoteSetup;
         b.Services.Add(new FirstRunSetup(this));
 
         var authMod = b.Modules.Register(new ModuleSpec
@@ -176,22 +177,24 @@ public sealed class AuthComponent : IWebAdminComponent
         return Task.CompletedTask;
     }
 
-    /// <summary>kiln.log gets the first-run link (DESIGN §3): at start (the path, before the panel listens) and again
-    /// with the full address once it does. The token works until the owner exists or the mod reloads.</summary>
+    /// <summary>kiln.log gets the first-run block once the panel listens (DESIGN §3; 0.1.2: three lines, what to do, the
+    /// link for this computer, and the console command for a server without a browser). The token works until the owner
+    /// exists or the mod reloads, on this machine only (AuthService.SetupScope), unless settings.json remoteSetup is on.</summary>
     private void LogSetupLink()
     {
         if (_setupToken is not { } token || _auth!.OwnerExists) return;
-        var endpoints = _server!.Endpoints;
-        if (endpoints.Count == 0)
-        {
-            if (Interlocked.CompareExchange(ref _linkLogged, 1, 0) == 0)
-                _log!.Warn($"{Product.Name}: no owner account yet. Open <the panel's address>/setup#token={token} on this machine to create it " +
-                           "(the full link follows once the panel listens; it works once, until the owner exists, and a reload makes a new one)");
-            return;
-        }
+        if (_server!.Endpoints.Count == 0) return;
         if (Interlocked.Exchange(ref _linkLogged, 2) == 2) return;
-        var (links, where) = SetupLinks(token);
-        _log!.Warn($"{Product.Name}: no owner account yet. Open this link {where} to create it (it works once): {string.Join("  or  ", links)}");
+        foreach (var line in FirstStartBlock(token)) _log!.Warn(line);
+    }
+
+    /// <summary>The three lines of the first-run block for <paramref name="token"/>.</summary>
+    internal IReadOnlyList<string> FirstStartBlock(string token)
+    {
+        var (links, _) = SetupLinks(token);
+        var remote = _serverSettings?.Current.RemoteSetup == true;
+        var hosted = _relay() is { Enabled: true, Host.Length: > 0 };
+        return Setup.SetupTexts.FirstStart(links[0], remote, hosted);
     }
 
     /// <summary>The setup links for <paramref name="token"/>: the relay's name first when the setup may come from
@@ -216,6 +219,26 @@ public sealed class AuthComponent : IWebAdminComponent
         var (links, w) = SetupLinks(token);
         where = w;
         return string.Join("  or  ", links);
+    }
+
+    /// <summary>The console's link for the hosted setup (0.1.2): a one-use token that works over hosted access too, for
+    /// 30 minutes, at https://<paramref name="host"/>/setup. Only made once the name has its trusted certificate (the
+    /// setup component asks), and only shown in the console's answer, never in kiln.log.</summary>
+    internal string? NewHostedSetupLink(string host)
+    {
+        if (_auth is null || _auth.OwnerExists) return null;
+        var token = _auth.NewSetupToken(Setup.SetupComponent.HostedLinkLife, AuthService.SetupScope.Hosted);
+        _auth.Audit.Record(AuditLog.Entry("auth.setup_link", null, null, true, args: new JsonObject { ["via"] = "console-hosted", ["host"] = host }));
+        return $"https://{host}/setup#token={token}";
+    }
+
+    /// <summary>The console's first-run block with a new one-hour token (<c>kilnwarden setup</c>).</summary>
+    internal IReadOnlyList<string>? NewConsoleBlock()
+    {
+        if (_auth is null || _auth.OwnerExists || _server is null) return null;
+        var token = _auth.NewSetupToken(TimeSpan.FromHours(1));
+        _auth.Audit.Record(AuditLog.Entry("auth.setup_link", null, null, true, args: new JsonObject { ["via"] = "console" }));
+        return FirstStartBlock(token);
     }
 
     internal bool OwnerExists => _auth?.OwnerExists == true;

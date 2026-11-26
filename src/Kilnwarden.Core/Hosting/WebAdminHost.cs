@@ -120,9 +120,11 @@ public sealed class WebAdminHost : IServerInfo
                     };
                 RaiseServerChanged();
             };
+            // before the first listener: a change of the setup state during its start (Kiln.Admin found too old while the
+            // listener binds) re-applies it after, instead of being missed (the public bind of remoteSetup stayed up)
+            _setup.Changed += () => Restart(Settings.Current);
             await _listeners.ApplyAsync(Settings.Current, force: true, ct).ConfigureAwait(false);
             Settings.Changed += (_, next) => Restart(next);
-            _setup.Changed += () => Restart(Settings.Current);
             Settings.Watch(_env.Time);
             _env.Log.Info($"{Product.Name} {Product.Version} started in {sw.Elapsed.TotalMilliseconds:F0} ms " +
                           $"({_components.Count} components, {Modules.Modules.Count} modules, {Modules.Routes.Count} routes" +
@@ -233,7 +235,7 @@ public sealed class WebAdminHost : IServerInfo
                 data.WriteJson(file, new
                 {
                     format = 1, host = address.ToString(), port = running.Server.LocalEndPoint.Port,
-                    sha256 = running.Tls?.Certificate.Sha256,
+                    sha256 = running.Tls?.LoopbackCertificate.Sha256,
                 });
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)

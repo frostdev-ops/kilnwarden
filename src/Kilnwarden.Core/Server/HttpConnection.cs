@@ -86,7 +86,7 @@ internal sealed class HttpConnection
                 // TLS-ALPN-01 (ACME, step 2) only needs the handshake
                 if (tlsInfo.Alpn == "acme-tls/1") return;
             }
-            var conn = new ConnectionInfo { Id = Id, PeerAddress = Peer, PeerPort = _remote.Port, LocalEndPoint = _local, Tls = tlsInfo };
+            var conn = new ConnectionInfo { Id = Id, PeerAddress = Peer, PeerPort = _remote.Port, LocalEndPoint = _local, Tls = tlsInfo, Relayed = _relayed is not null };
             reader = new RequestReader(stream);
             var requests = 0;
             while (!ct.IsCancellationRequested && !_closing)

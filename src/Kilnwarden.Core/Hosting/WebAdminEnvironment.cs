@@ -23,11 +23,14 @@ public sealed class WebAdminEnvironment
     public IGameThread? GameThread { get; init; }
 
     /// <summary>The game's UDP query port from enshrouded_server.json ("queryPort"), or null.</summary>
-    public int? QueryPort()
+    public int? QueryPort() => QueryPortOf(ServerDirectory);
+
+    /// <summary>The query port of the server in <paramref name="serverDirectory"/>, or null.</summary>
+    public static int? QueryPortOf(string serverDirectory)
     {
         try
         {
-            var cfg = Path.Combine(ServerDirectory, "enshrouded_server.json");
+            var cfg = Path.Combine(serverDirectory, "enshrouded_server.json");
             if (File.Exists(cfg) && JsonNode.Parse(File.ReadAllText(cfg))?["queryPort"] is JsonValue v &&
                 v.TryGetValue<int>(out var q) && q is > 0 and < 65536)
                 return q;

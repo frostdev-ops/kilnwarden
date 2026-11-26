@@ -46,6 +46,9 @@ public sealed class AcmeManager : IAcmeCertificates, IDisposable
 {
     public const string AccountFile = "tls/acme/account.json", CertFile = "tls/acme/cert.json", StateFile = "acme-state.json";
 
+    /// <summary>Why a dns-01 order waits: the hosted name is not connected yet (claimed and the relay link up).</summary>
+    public const string HostedNotLinked = "waiting for hosted access to connect (the name must be claimed first)";
+
     private readonly DataStore _data;
     private readonly SettingsStore<AcmeSettings> _settings;
     private readonly Func<ServerSettings> _server;
@@ -56,6 +59,7 @@ public sealed class AcmeManager : IAcmeCertificates, IDisposable
     private readonly HttpMessageInvoker _http;
     private readonly bool _ownsHttp;
     private readonly Func<RelaySettings?> _relay;
+    private readonly Func<bool> _relayLinked;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _single = new(1, 1);
     private readonly object _stateLock = new();
@@ -89,8 +93,9 @@ public sealed class AcmeManager : IAcmeCertificates, IDisposable
     }
 
     internal AcmeManager(DataStore data, SettingsStore<AcmeSettings> settings, Func<ServerSettings> server, Func<bool> ownerExists, IWebAdminLog log,
-        AcmeOptions? options = null, Func<RelaySettings?>? relay = null)
+        AcmeOptions? options = null, Func<RelaySettings?>? relay = null, Func<bool>? relayLinked = null)
     {
+        _relayLinked = relayLinked ?? (() => true);
         _data = data;
         _settings = settings;
         _server = server;
@@ -202,6 +207,9 @@ public sealed class AcmeManager : IAcmeCertificates, IDisposable
         if (names.Count == 0) return "no names to certify (acme.json names or settings.json tls.hostnames)";
         if (s.Challenge == "dns-01" && (RelayFor(names) is null || !_data.Exists("relay-key.pem")))
             return "dns-01 needs the enabled relay and its registered hostname as the only ACME name";
+        // 0.1.2: the relay only takes the DNS record once the name is claimed and this server is connected; an order
+        // before that fails, counts against the week's budget and waits an hour
+        if (s.Challenge == "dns-01" && !_relayLinked()) return HostedNotLinked;
         var now = _time.GetUtcNow();
         if (!force && Good is { } g && names.All(n => g.Info.Names.Contains(n, StringComparer.OrdinalIgnoreCase)) &&
             g.Info.NotAfter - now > TimeSpan.FromDays(s.RenewDaysBefore)) return "current";

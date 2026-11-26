@@ -21,5 +21,7 @@ public static class FirstPartyComponents
         // step 2 lane C: extension API, metrics, webhooks, public page
         new Extensions.ExtensionComponent(), new Metrics.MetricsComponent(), new Webhooks.WebhooksComponent(), new PublicPage.PublicPageComponent(),
         new Relay.RelayComponent(),
+        // 0.1.2: the setup wizard and the console's setup (it writes the relay's, ACME's and the server's settings)
+        new Setup.SetupComponent(),
     ];
 }
