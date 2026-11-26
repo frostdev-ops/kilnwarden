@@ -83,9 +83,16 @@ export interface AcmeStatus {
 export interface RelayStatus {
   enabled: boolean; origin: string; host: string; state: "off" | "waiting" | "connected" | "error"; lastError: string | null; since: string | null;
   waitingFor: string[]; publicKey: string | null;
-  /** SHA-256 hex of the public key (what the relay and its claim pages show); the claim pages' "My panel name". */
+  /** SHA-256 hex of the public key (what the relay and its claim pages show); the claim pages' "Your panel name"
+   * (https://claim.<the name's zone>/, 0.1.1). */
   fingerprint?: string | null; namesPage?: string | null;
+  /** 0.1.1: the move or release the relay has scheduled for this panel's name (it waits 24 hours, and the owner can undo
+   * it here): the new key's fingerprint (null: a release), when it was asked for, when it happens. */
+  scheduled?: RelayScheduled | null;
+  /** 0.1.1: this server's key takes the name over then (it is moving here from another server). */
+  movingHere?: string | null;
 }
+export interface RelayScheduled { to: string | null; requested: string; at: string }
 /** A claim link for the relay's Discord claim pages (POST /api/core/relay/claim): once, for 15 minutes. */
 export interface RelayClaimLink { url: string; host: string; fingerprint: string; expires: string; warnings: string[] }
 
@@ -94,9 +101,25 @@ export function shortFingerprint(fp: string | null | undefined): string {
   return (fp ?? "").slice(0, 32).match(/.{1,4}/g)?.join(" ") ?? "";
 }
 
-/** Only https links (and http to this machine, a dev relay) become a link to click. */
+/** Owner decision 2026-11-25: said word for word wherever hosted access is described (Panel settings > Hosted access,
+ * the README, the claim pages and kiln.nexus itself). */
+export const KILN_NEXUS_NOTE = "kiln.nexus is frostdev's own domain for Kiln. It has no affiliation with Nexus Mods (nexusmods.com).";
+
+/** Only links to the claim pages' own https origin (claim.<zone>, 0.1.1) become a link to click. */
 export function isClaimUrl(url: string): boolean {
-  return /^https:\/\/[a-z0-9.-]+(:\d+)?\/kiln\/webadmin\/names\/claim\?v=1&/.test(url) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/kiln\/webadmin\/names\/claim\?v=1&/.test(url);
+  return /^https:\/\/claim\.[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?\/claim\?v=1&/.test(url);
+}
+
+/** The claim pages' "Your panel name" (https://claim.<zone>/), only that becomes a link. */
+export function isClaimPages(url: string | null | undefined): url is string {
+  return !!url && /^https:\/\/claim\.[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?\/$/.test(url);
+}
+
+/** The banner's sentence for a scheduled move or release of this panel's name (lane L1b). */
+export function scheduledText(host: string, s: RelayScheduled, at: string): string {
+  return s.to === null
+    ? `This panel's name ${host} is being released on ${at}: after that it no longer reaches this server, and anyone may claim it.`
+    : `This panel's name ${host} is being moved to another server on ${at}.`;
 }
 export interface IdentityStatus {
   panelId: string;
@@ -135,6 +158,7 @@ export function panelEndpoints(api: Api) {
     acmeRenew: () => api.post<{ ok: true; started: true }>("/api/acme/renew"),
     relay: () => api.get<RelayStatus>("/api/core/relay"),
     relayClaim: () => api.post<RelayClaimLink>("/api/core/relay/claim"),
+    relayUndo: () => api.post<{ undone: true; host: string }>("/api/core/relay/move/undo"),
     identityStatus: () => api.get<IdentityStatus>("/api/identity/status"),
     mapAssets: () => api.get<MapAssetsStatus>("/api/core/map-assets-status"),
 

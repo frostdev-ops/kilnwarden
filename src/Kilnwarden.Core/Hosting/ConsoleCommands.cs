@@ -75,6 +75,7 @@ public static class ConsoleCommands
         {
             var r = relay.Describe();
             s.Append(r.Enabled ? $"; relay {r.Host}: {r.State}{(r.LastError is { } e && r.State != "connected" ? $" ({e})" : "")}" : "; relay: off");
+            if (r.Enabled && host.Services.TryGet<Relay.RelayMoves>()?.Describe() is { } moves) s.Append($"; {moves}");
         }
         return s.ToString();
     }

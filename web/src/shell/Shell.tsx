@@ -8,6 +8,7 @@ import { ep, useSession } from "../app/context";
 import { SERVER_ID } from "../api/kapSocket";
 import { buildNav, isActive, type NavItem } from "../state/nav";
 import { NavIcon } from "./icons";
+import { MoveBanner } from "./MoveBanner";
 import { useBranding } from "./useBranding";
 
 const GROUPS: { id: NavItem["group"]; title: string }[] = [
@@ -88,6 +89,7 @@ export function Shell() {
       </nav>
       <div className="wa-scrim" onClick={() => setOpen(false)} aria-hidden />
       <main className="wa-main" id="main" tabIndex={-1}>
+        <MoveBanner />
         <Outlet />
       </main>
     </div>

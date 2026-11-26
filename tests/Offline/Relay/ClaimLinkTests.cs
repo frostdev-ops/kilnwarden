@@ -73,7 +73,8 @@ public sealed class ClaimLinkTests
         Assert.True(r.StatusCode == HttpStatusCode.OK, await r.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var link = (await LaneC.LaneC.JsonAsync(r))!;
         var url = link["url"]!.GetValue<string>();
-        Assert.StartsWith("https://frostdev.io/kiln/webadmin/names/claim?v=1&host=olive.kiln.nexus&key=", url);
+        // lane L1b: the claim pages have an origin of their own, claim.<the name's zone>
+        Assert.StartsWith("https://claim.kiln.nexus/claim?v=1&host=olive.kiln.nexus&key=", url);
         Assert.Equal("olive.kiln.nexus", link["host"]!.GetValue<string>());
         var expires = DateTimeOffset.Parse(link["expires"]!.GetValue<string>());
         Assert.InRange(expires - DateTimeOffset.UtcNow, TimeSpan.FromMinutes(14), TimeSpan.FromMinutes(16));
@@ -82,14 +83,14 @@ public sealed class ClaimLinkTests
         // Panel settings shows the same fingerprint, and where "My panel name" is
         var status = (await LaneC.LaneC.JsonAsync(await admin.GetAsync("/api/core/relay")))!;
         Assert.Equal(link["fingerprint"]!.GetValue<string>(), status["fingerprint"]!.GetValue<string>());
-        Assert.Equal("https://frostdev.io/kiln/webadmin/names", status["namesPage"]!.GetValue<string>());
+        Assert.Equal("https://claim.kiln.nexus/", status["namesPage"]!.GetValue<string>());
         Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Base64Url.DecodeFromChars(Query(url.Split('?', 2)[1])["key"]))), status["fingerprint"]!.GetValue<string>());
 
         var answer = ConsoleCommands.Claim(c.H.Host);
         Assert.StartsWith("Claim olive.kiln.nexus for this server", answer);
-        Assert.Contains("works once, for 15 minutes: https://frostdev.io/kiln/webadmin/names/claim?v=1&host=olive.kiln.nexus&key=", answer);
+        Assert.Contains("works once, for 15 minutes: https://claim.kiln.nexus/claim?v=1&host=olive.kiln.nexus&key=", answer);
         Assert.Contains($"SHA-256 {status["fingerprint"]!.GetValue<string>()}", answer);
-        Assert.DoesNotContain(c.H.Log.Lines, l => l.Contains("/names/claim?"));
+        Assert.DoesNotContain(c.H.Log.Lines, l => l.Contains("/claim?"));
         await Eventually.True(() => c.H.Host.Services.Get<AuditLog>().Read(50).Count(e => e.GetProperty("op").GetString() == "core.relay.claim_link") >= 2,
             3000, "both links audited");
     }

@@ -6,7 +6,7 @@
     <WebAdminModId>kilnwarden</WebAdminModId>
     <WebAdminProductName>Kilnwarden</WebAdminProductName>
     <WebAdminNamespace>Kilnwarden</WebAdminNamespace>
-    <WebAdminVersion>0.1.0</WebAdminVersion>
+    <WebAdminVersion>0.1.1</WebAdminVersion>
     <!-- The Kiln this mod needs (kiln.mod.json "dependencies"): the release it is built against and tested on. Kiln.Sdk
          stamps apiVersion 0.2.19 (Kiln 0.2.0-dev.31.9 and later), and Kiln.Admin 30.9 added the KAP ops it uses. -->
     <WebAdminKilnFloor>0.2.0-dev.31.10</WebAdminKilnFloor>

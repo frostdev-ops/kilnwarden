@@ -11,8 +11,8 @@ KAP op is used.
 { "steam": { "enabled": false },
   "discord": { "enabled": false, "broker": "https://frostdev.io", "guildId": "", "allowedRoles": [] } }
 ```
-- Discord sign-in is coming soon (frostdev.io's broker is not live yet). It is only active when enabled and the build
-  pins a key for `broker`. Embed the public pin file with
+- Discord sign-in goes through frostdev.io's broker, which is live; release builds pin its keys from 0.1.1 on. It is
+  only active when enabled and the build pins a key for `broker`. Embed the public pin file with
   `-p:WebAdminBrokerPins=...` at build time. There is no setting that adds a key at runtime.
 - `guildId` is required when Discord is enabled; `allowedRoles` (role ids) gate who may sign in (empty: any member).
   Roles never grant panel roles.

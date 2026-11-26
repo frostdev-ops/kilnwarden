@@ -7,8 +7,8 @@ panel over HTTPS from inside the dedicated server process.
 | Question | Answer |
 |---|---|
 | Where it runs | Inside the server only (pure mod, no companion service) |
-| Sign-in | Local accounts + roles, Steam, Discord (via frostdev.io; coming soon) |
-| Reach | Open port + HTTPS, launcher tunnel, frostdev.io relay (coming soon) |
+| Sign-in | Local accounts + roles, Steam, Discord (via frostdev.io's broker; from 0.1.1) |
+| Reach | Open port + HTTPS, launcher tunnel, frostdev.io relay (live) |
 | Modularity | Public extension API: any mod adds pages, widgets, actions, settings, permissions |
 | UI | Shares the launcher's admin pages (one React codebase) |
 | v1 extras | Schedules, mod management, audit log + Discord webhooks, live metrics |
@@ -72,14 +72,15 @@ frostdev.io relay ◄─outbound WSS─ (optional)      launcher ─SSH/KAP tunn
 - **Steam:** OpenID 2.0 straight to steamcommunity.com, with the panel's own URL as the realm, so no broker is needed. A
   SteamID links to the in-game player, which gives "this is me" on the Players page and optional auto-roles from the
   server's permission groups.
-- **Discord (coming soon):** a fixed redirect URI can't serve thousands of self-hosted panels, so **frostdev.io brokers
+- **Discord:** a fixed redirect URI can't serve thousands of self-hosted panels, so **frostdev.io brokers
   the OAuth**.
   1. The panel sends you to `frostdev.io/kiln/auth/discord?panel=<id>&return=<url>&nonce`.
   2. frostdev.io completes the OAuth and returns a short-lived Ed25519-signed assertion: user id, name, and roles in one
      guild the owner picks (`guilds.members.read`).
   3. The panel checks it with the pinned frostdev.io key.
   No Discord token reaches the panel or stays on frostdev.io, the same rule as the launcher's sign-in. The broker's
-  key is pinned in the build (`-p:WebAdminBrokerPins`), so Discord sign-in arrives with a release that pins it.
+  key is pinned in the build (`-p:WebAdminBrokerPins`); release builds pin it from 0.1.1 on, so Discord sign-in works
+  from that release.
 - **Roles:** built-ins are owner, admin, moderator, viewer, and custom roles can be added. Permissions are per module and
   per action, using Kiln.Admin op names plus extension-declared names (`players.kill`, `spawn.*`, `mymod.edit`).
   Discord guild roles and Steam groups map to panel roles. The gate checks every KAP op and extension action on the
@@ -206,7 +207,8 @@ panel turns every command on the server, Kiln's and every mod's, into a form wit
 - **Launcher tunnel:** the launcher already tunnels KAP over SSH, and it adds the web port. "Open web panel" opens the
   panel and signs in with a one-time login link minted over KAP. The launcher holds the admin token, which counts as
   owner.
-- **frostdev.io relay** (opt-in, coming soon): no port forwarding needed. The panel side is in 0.1.0.
+- **frostdev.io relay** (opt-in, live): no port forwarding needed. The panel side is in 0.1.0; 0.1.1 adds the 24-hour
+  move notice with Undo and the claim pages' own address, claim.kiln.nexus.
   1. The mod dials out over WSS to frostdev.io's relay for `<name>.kiln.nexus`, signing with its own key pair. Panel
      names live on kiln.nexus, not under frostdev.io, so they are never same-site with frostdev.io's apps. The relay's
      API and the Discord broker are on frostdev.io. The apex kiln.nexus and the reserved labels (www, api, relay,

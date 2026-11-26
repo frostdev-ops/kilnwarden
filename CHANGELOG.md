@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.1.1 (2026-11-26)
+
+Hosted access is live, and so is Discord sign-in. The relay, the claim pages at `https://claim.kiln.nexus` and the
+landing page at `https://kiln.nexus` are open. A name that is in use now moves or goes only after 24 hours, and the
+server it is on can undo that.
+
+kiln.nexus is frostdev's own domain for Kiln. It has no affiliation with Nexus Mods (nexusmods.com). Panel settings >
+Hosted access, the claim pages and kiln.nexus itself now say so.
+
+### Hosted access and Discord sign-in
+- Hosted access at `https://<name>.kiln.nexus` is live: no port forwarding, one outbound connection from your server on
+  port 443, and the relay passes the encrypted traffic through without decrypting it. Claim your name with Discord
+  (below). Panels from 0.1.0 work with it too, but only 0.1.1 shows the move notice and its Undo.
+- Discord sign-in works: this build pins the keys of frostdev.io's sign-in broker (0.1.0 had none, so its Discord
+  sign-in stays off). Switch it on in Panel settings > Sign-in, then link Discord in My account.
+- What frostdev.io sees and keeps for both is on the Kiln privacy page,
+  [frostdev.io/kiln/privacy](https://frostdev.io/kiln/privacy).
+
+### Claiming a name
+- Claim links (Panel settings > Hosted access > **Make a claim link**, and the console's `kilnwarden claim`) now open
+  the claim pages on an address of their own, `https://claim.kiln.nexus` (`claim.` and the zone of your name). The
+  claim pages share it with nothing else. Links that 0.1.0 made are sent there too.
+- Moving a name that is in use to another server, or releasing it, now waits **24 hours**. Until then the name still
+  reaches the server it is on. That server's panel shows a notice on every page, with **Undo** for the owner (after
+  confirming it is you), says it in kiln.log, and `kilnwarden status` shows it. Undo keeps the name on that server, with
+  that server's own key, and unties it from the Discord account that asked; so someone who got into your Discord account
+  can't take your name in one go, and can't simply ask again. You can also cancel the move or release on the claim
+  pages. If the old server is gone for good, the move still happens after the 24 hours.
+- The server a name moves to says in Panel settings and kiln.log when it takes the name over, and connects then by
+  itself. The server it leaves says that the name moved away.
+
+### The Kiln Launcher
+- "Open web panel" on your server's page opens Kilnwarden and signs you in as the owner with Kiln 0.2.0-dev.31.14 or
+  newer, which is out now: update the launcher if the button doesn't show. Older launchers look for the mod's old name.
+
+### Under the hood
+- The panel takes notices about its name on its relay connection, and ignores notices it does not know, so a later
+  relay's new notices never drop the connection. A 0.1.0 panel gets no notices; the relay still keeps the 24 hours for it.
+
 ## 0.1.0 (2026-11-25)
 
 The first release. It needs Kiln 0.2.0-dev.31.10 or later on the server, with the admin runtime component. Players
@@ -17,7 +56,7 @@ Test builds called this mod Kiln Web Admin (mod id `kiln-webadmin`). It is **Kil
 - The console commands are `kilnwarden setup`, `kilnwarden status` and `kilnwarden claim`; `webadmin ...` still works.
 - The extension API is `Kilnwarden.Api.dll` (namespace `Kilnwarden.Api`), still version 1.0.0.
 - A one-time login from a Kiln Launcher minted for the old id still works. Today's Kiln Launchers look for the old id,
-  so their "Open web panel" button shows for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon).
+  so their "Open web panel" button shows for Kilnwarden from Kiln 0.2.0-dev.31.14.
 
 ### The panel
 - A full admin panel served over HTTPS from inside the dedicated server: no extra program to run, and it answers only
@@ -42,18 +81,18 @@ Test builds called this mod Kiln Web Admin (mod id `kiln-webadmin`). It is **Kil
 - Audit log of every change, filterable and exportable.
 - An optional public page (off by default): online or not, player count, names, a map with player dots (rounded, no
   names), rules and join info in markdown, the mod list.
-- Panel settings: address and TLS, Let's Encrypt (HTTP-01, TLS-ALPN-01, and DNS-01 through the relay once hosted
-  access opens), hosted access (coming soon), sign-in providers, branding (name, colour, logo, favicon), modules on and
+- Panel settings: address and TLS, Let's Encrypt (HTTP-01, TLS-ALPN-01, and DNS-01 through the relay),
+  hosted access, sign-in providers, branding (name, colour, logo, favicon), modules on and
   off, map art.
 
 ### Accounts and security
 - Local accounts with roles (owner, admin, moderator, viewer and your own), per-module and per-action permissions,
   command levels per role, two-factor sign-in with recovery codes, sessions you can see and end.
 - A second confirmation (password or code) before sensitive changes; sign-in through Steam for accounts that linked
-  it. Discord sign-in (through frostdev.io's broker) is coming soon.
+  it. Discord sign-in through frostdev.io's broker (it works from 0.1.1, the first build with the broker's keys).
 - One-time setup link, no default password. Loopback only until the owner exists. Strict CSP, SameSite cookies, Origin
   checks, rate limits and lockouts, request size and time limits, an IP allowlist, and a reverse-proxy mode.
-- Hosted access through the frostdev.io relay (coming soon; the panel side is in this release): the relay forwards
+- Hosted access through the frostdev.io relay (the panel side; the relay opened with 0.1.1): the relay forwards
   encrypted traffic and never holds the panel's key.
 
 ### For mod authors

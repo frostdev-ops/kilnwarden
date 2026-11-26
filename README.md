@@ -30,7 +30,7 @@ updates, player activity, metrics, webhooks, an audit log and an optional public
   schedule runs, metric alerts and admin actions, with your own message text.
 - **Accounts and roles:** owner, admin, moderator, viewer and roles of your own, with permissions down to single
   commands. Two-factor sign-in with recovery codes, sessions you can see and end, and an audit log of every change.
-  Sign in with Steam once you link your account. Discord sign-in is coming soon.
+  Sign in with Steam or Discord once you link your account.
 - **A public page if you want one:** whether the server is up, the player count, a map with rough player dots, your
   rules and how to join. It's off until you turn it on, and each part has its own switch.
 - **Your look:** your server's name, colour, logo and favicon.
@@ -77,8 +77,8 @@ have an owner account.
 
 **With the Kiln Launcher**, **Servers > (your server) > Open web panel** opens the panel and signs you in as the owner,
 for a local server and for a remote one over its SSH connection. Before an owner exists, it opens the setup page.
-The button shows for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon): earlier launchers look for the mod's old name.
-Until then, use the setup link from `kiln.log`.
+The button needs Kiln 0.2.0-dev.31.14 or newer: earlier launchers look for the mod's old name. With an older launcher,
+use the setup link from `kiln.log`.
 
 No browser on the server's machine, for example a rented game server with FTP only? See the table below.
 
@@ -92,12 +92,12 @@ may see.
 |---|---|---|
 | **Home PC or LAN** | Open it on the server's machine, or use the Kiln Launcher. For other devices at home, set the bind address and add an IP allowlist for your network. | Nothing extra; for other devices, one open port on that PC |
 | **VPS or cloud machine** | The Kiln Launcher over SSH (nothing open but SSH), or your own address: open the port and get a free Let's Encrypt certificate from the panel (HTTP-01 on port 80, TLS-ALPN-01 on port 443) or use your own certificate files | SSH, or an open TCP port and a name pointing at the server (a free dynamic DNS name works) |
-| **Rented game server** (FTP and a web console only) | Hosted access at `https://<name>.kiln.nexus` (coming soon). With one extra port from your host: direct HTTPS with a self-signed certificate. | File access over FTP/SFTP; outbound HTTPS from the server |
-| **Docker or Pterodactyl** | A published port (an allocation) with `bind` set to `0.0.0.0` inside the container, or hosted access (coming soon) | One more TCP port, or outbound HTTPS only; the data folder on the persistent volume |
-| **Behind CGNAT, or IPv6 only** | Hosted access (coming soon). With IPv6 only, a direct IPv6 address also works, but IPv4-only visitors can't reach it. | Outbound HTTPS (IPv4 or IPv6) |
+| **Rented game server** (FTP and a web console only) | Hosted access at `https://<name>.kiln.nexus`. With one extra port from your host: direct HTTPS with a self-signed certificate. | File access over FTP/SFTP; outbound HTTPS from the server |
+| **Docker or Pterodactyl** | A published port (an allocation) with `bind` set to `0.0.0.0` inside the container, or hosted access | One more TCP port, or outbound HTTPS only; the data folder on the persistent volume |
+| **Behind CGNAT, or IPv6 only** | Hosted access. With IPv6 only, a direct IPv6 address also works, but IPv4-only visitors can't reach it. | Outbound HTTPS (IPv4 or IPv6) |
 
-The Kiln Launcher routes need Kiln 0.2.0-dev.31.14 or newer (coming soon; see Install). You can also put the panel behind your own reverse
-proxy: turn its TLS off and mark the proxy as trusted.
+The Kiln Launcher routes need Kiln 0.2.0-dev.31.14 or newer (see Install). You can also put the panel behind your own
+reverse proxy: turn its TLS off and mark the proxy as trusted.
 
 For the first sign-in on a server you can only reach over FTP, the setup link is in `kiln/logs/kiln.log`, or comes
 from the console command `kilnwarden setup` through Kiln's console folder (`kiln/control/console/`). Set
@@ -125,7 +125,7 @@ owner exists; it stays off unless you turn it on.
 Before release, the code had a security review and fuzz testing. If you find a problem, please report
 it privately: see [SECURITY.md](SECURITY.md).
 
-## Hosted access on kiln.nexus (coming soon)
+## Hosted access on kiln.nexus
 
 **kiln.nexus is frostdev's own domain for Kiln. It has no affiliation with Nexus Mods (nexusmods.com).**
 
@@ -137,22 +137,29 @@ That is what makes it work on rented game servers, behind CGNAT, with IPv6 only 
   encrypted bytes through. TLS ends inside your game server, with your panel's own Let's Encrypt certificate, whose
   key never leaves your server, so the relay has nothing to decrypt with.
 - **You claim your name with Discord.** In **Panel settings > Hosted access** (or with the console command
-  `kilnwarden claim`), the panel makes a one-time claim link signed with its own key. Open it, sign in with a Discord
-  account that is a member of the Kiln Discord, and claim the name. Each Discord account holds one name.
+  `kilnwarden claim`), the panel makes a one-time claim link signed with its own key. Open it on the claim pages,
+  `https://claim.kiln.nexus`, sign in with a Discord account that is a member of the Kiln Discord, and claim the name.
+  Each Discord account holds one name.
+- **Your server can undo a move.** Moving your name to another server, or releasing it, waits 24 hours. Until then the
+  name stays with your server, whose panel shows a notice with **Undo**: someone who gets into your Discord account
+  can't take your name in one go.
 - **What the relay sees:** the panel's name, your visitors' IP addresses, when they connect, and how much data flows.
-  It keeps counts, not addresses. One limit to know: the relay's operator controls the DNS for `kiln.nexus`, so in
-  principle it could get a certificate for your name. frostdev commits not to, and the Kiln privacy page will say so
-  before hosted access opens.
+  The relay keeps counts, not addresses. nginx in front of it records a visitor's address only when a connection
+  fails, and keeps it 14 days.
+- **One limit to know:** the relay's operator controls the DNS for `kiln.nexus`, so in principle it could get a
+  certificate for your name. We commit not to, and the [Kiln privacy page](https://frostdev.io/kiln/privacy) says so.
+  A `kiln.nexus` CAA record forbids wildcard certificates, so no single certificate can cover every panel's name.
 
 ![Hosted access in Panel settings: the name and a claim link](art/screens/hosted-access.png)
 
-The panel side is in this release. The relay and the claim pages go live soon; we'll announce it on the Kiln Discord.
-Until then, use one of the other routes.
+Hosted access is live: the relay and the claim pages at `https://claim.kiln.nexus` are open, and the landing page at
+`https://kiln.nexus` says what the domain is. Panels from Kilnwarden 0.1.0 work with it too; 0.1.1 adds the move
+notice with Undo and links to the claim pages directly.
 
 ## Privacy
 
-Kilnwarden keeps its data on your server. frostdev.io only takes part if you turn on hosted access or Discord sign-in
-(both coming soon). What frostdev.io sees and keeps for them will be on the Kiln privacy page before they open:
+Kilnwarden keeps its data on your server. frostdev.io only takes part if you turn on hosted access or Discord sign-in.
+What frostdev.io sees and keeps for them is on the Kiln privacy page:
 **[frostdev.io/kiln/privacy](https://frostdev.io/kiln/privacy)**.
 
 ## For mod authors: the extension API
@@ -188,8 +195,10 @@ or the TLS library, or with a TLS library that isn't the recorded build of its s
 (`native/kwtls/windows-build.sha256`). The zip is reproducible: `tools/release/repro.sh [commit]` builds a commit twice
 from clean exports and compares the bytes. Set `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` to get the same zip.
 
-Discord sign-in needs the broker's public key built in: add `-p:WebAdminBrokerPins=/absolute/path/to/pins.json` to
-the build and pack commands.
+Discord sign-in needs the broker's public keys built in: release zips from 0.1.1 on pin frostdev.io's broker. For
+your own build, save `https://frostdev.io/kiln/auth/discord/keys` as a file and add
+`-p:WebAdminBrokerPins=/absolute/path/to/pins.json` to the build and pack commands; without it, Discord sign-in stays
+off in that build.
 
 Other checks:
 - Browser tests: `cd web && KILN_UI_WORKTREE=<a Kiln checkout> bunx playwright test` (a dev host and a mock Kiln.Admin,

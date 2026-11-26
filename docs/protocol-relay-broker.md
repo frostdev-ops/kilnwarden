@@ -2,8 +2,8 @@
 
 This file describes, exactly, what the mod sends to and expects from the frostdev.io hosted services. It is written
 from the code (`src/Kilnwarden.Core/Relay/*`, `Tls/Acme/AcmeManager.cs` `OrderViaRelayAsync`,
-`Identity/DiscordBroker.cs`, `Identity/IdentityRoutes.cs`). frostdev.io's hosted side (relay, DNS endpoint, broker;
-coming soon, not part of this repository) is built against it. A change to anything here is a protocol change: it is recorded in the change log at the end, with the
+`Identity/DiscordBroker.cs`, `Identity/IdentityRoutes.cs`). frostdev.io's hosted side (relay, DNS endpoint, broker,
+claim pages; live, not part of this repository) is built against it. A change to anything here is a protocol change: it is recorded in the change log at the end, with the
 mod version that first sends it.
 
 Protocol version: **relay `kwa-relay/1`**, **broker `v=1`**. Mod versions: 0.1.0 and later.
@@ -31,7 +31,7 @@ Conventions:
 - The key never rotates by itself. Deleting both files makes a new key, which needs a new registration (or a claim
   link from the new key for the same name, by the Discord account that owns it: the name moves to the new key).
 
-### 1.1 Claim links (mod 0.1.0)
+### 1.1 Claim links (mod 0.1.0; the claim pages' own origin since 0.1.1)
 
 The mod makes one when the owner asks (Panel settings > Hosted access > **Make a claim link**, or the console command
 `kilnwarden claim`) for `HOST` (`relay.json` `host`). It is the signed block of §2 with kind **`claim`**, never sent as
@@ -46,11 +46,16 @@ claim
 <nonce>
 ```
 
-signed RSASSA-PKCS1-v1_5 SHA-256 with the relay key, and carried in a URL on the relay's origin:
+signed RSASSA-PKCS1-v1_5 SHA-256 with the relay key, and carried in a URL on the claim pages' own origin,
+`https://claim.<ZONE>`, where `ZONE` is `HOST` without its first label (`myserver.kiln.nexus`: `https://claim.kiln.nexus`;
+`claim` is a reserved label, never a panel):
 
 ```
-ORIGIN/kiln/webadmin/names/claim?v=1&host=<HOST>&key=<base64url SPKI DER>&time=<time>&nonce=<nonce>&sig=<base64url signature>
+https://claim.<ZONE>/claim?v=1&host=<HOST>&key=<base64url SPKI DER>&time=<time>&nonce=<nonce>&sig=<base64url signature>
 ```
+
+(0.1.0 put the link on the relay's origin, `ORIGIN/kiln/webadmin/names/claim?...`; frostdev.io sends those on to the
+claim pages unchanged.)
 
 Exactly these six parameters, each once (`Uri.EscapeDataString` on `host`; the rest are already URL-safe). The relay
 operator's claim pages and relay:
@@ -60,8 +65,11 @@ operator's claim pages and relay:
   one made before the relay last started;
 - register `HOST` for that key and the signed-in Discord account: pending until the key's first signed request (the
   mod's control link), at most an hour, then active. A link for a name the account already holds with another key
-  moves the name to the new key (the old key's links end at once). A link for a name registered for this very key
-  without an owner (by the operator) gives it to the account.
+  moves the name to the new key: at once while the name is pending, **24 hours later** once it is active (§3.1: the
+  old key keeps the name until then, its panel is told and can undo the move; the new key's requests are refused with
+  `403` and `X-Kwa-Moving-At: <time>`). The account's release of an active name waits the same 24 hours. A link for a
+  name registered for this very key without an owner (by the operator, or after an undo) gives it to the account. A
+  link from the key the name has cancels what is scheduled for it.
 
 The mod never logs the link (only the console's answer file and the Settings page show it); whoever opens it first
 may claim the name for this key, so the owner opens it themselves. A Discord account holds one live name; the
@@ -99,6 +107,7 @@ The signature is **RSASSA-PKCS1-v1_5 with SHA-256** over those bytes, with the r
 | `dns-add` | `PUT ORIGIN/kiln/webadmin/relay/dns` | the TXT value (43 base64url characters) |
 | `dns-remove` | `DELETE ORIGIN/kiln/webadmin/relay/dns` | the same TXT value |
 | `claim` | never a request of its own: the claim link of §1.1 | the SPKI's SHA-256, 64 lower-case hex |
+| `move-undo` | `DELETE ORIGIN/kiln/webadmin/relay/move` (0.1.1, §3.1), no body | empty string |
 
 The kind is not sent as a header. The relay derives it from the path and method and rebuilds the signed string. The
 mod expects the relay to:
@@ -118,7 +127,9 @@ HTTP client behaviour on the mod side: no proxy, no cookies, no redirects follow
   `settings.json` `allowedHosts` or `tls.hostnames`.
 - The WebSocket opening handshake must finish within 10 s. The mod sends a WebSocket ping every 20 s and drops the link
   if no pong arrives within 15 s (the relay's WebSocket stack must answer pings; any standard one does).
-- The mod **sends no messages** on the control link. The relay sends one **text** message per new browser connection:
+- The mod **sends no messages** on the control link. Since 0.1.1 it adds the request header `X-Kwa-Notices: 1` (not
+  signed: it only asks for §3.1's notices; a relay sends them to no link that did not ask, so a 0.1.0 mod never gets
+  one). The relay sends one **text** message per new browser connection:
 
 ```json
 {"id":"<32 lower-case hex>","ip":"<browser IP literal>","port":<browser source port>}
@@ -134,12 +145,44 @@ HTTP client behaviour on the mod side: no proxy, no cookies, no redirects follow
   - Property names match case-insensitively; unknown properties are ignored.
   - Each message must be **one complete text frame of at most 1024 bytes**. A binary message, a fragmented or longer
     message, or one that does not have the shape above makes the mod close the control link (it reconnects later).
+    Since 0.1.1 a message with a `notice` property is a notice (§3.1), never an announcement; a notice of a kind the
+    mod does not know, or one it can't read, is ignored and never closes the link.
 - For each message the mod opens a `data` WebSocket for that `id`, unless it already has a stream with that id or
   already has **24** streams open on this control link. An announcement it does not take is ignored without an answer;
   the relay should time out that browser connection (10 s is enough: the mod dials the data link at once).
 - The control link ends when the relay closes it, on a network error, or when the mod's settings, listener or the
   conditions above change. Ending it also aborts every data stream of that session. The mod retries **4 s** after a
   session ends, for as long as the relay is enabled. It logs a warning per failed attempt (exception type only).
+
+### 3.1 Notices about the name (0.1.1)
+
+On a link that asked (`X-Kwa-Notices: 1`) the relay sends, at once and whenever it changes, what is scheduled for the
+name:
+
+```json
+{"notice":"name","host":"<HOST>","scheduled":null}
+{"notice":"name","host":"<HOST>","scheduled":{"to":"<64 lower-case hex>","requested":<time>,"at":<time>}}
+{"notice":"name","host":"<HOST>","scheduled":{"to":null,"requested":<time>,"at":<time>}}
+```
+
+- `scheduled` non-null: the name's Discord owner asked on the claim pages to move it to the key with that SPKI SHA-256
+  (`to`), or to release it (`to` null), at `requested`. It takes effect at `at` (24 hours later). Until then the name
+  stays with this key: browsers, signed requests and DNS-01 records go to this server only.
+- The panel shows it to whoever may see its settings, and logs it once per change. The owner (`core.settings.edit`,
+  with a recent proof) can undo it: `DELETE ORIGIN/kiln/webadmin/relay/move` with the five signed headers of §2, kind
+  `move-undo`, an empty id, no body. The relay takes the undo only signed by the key the name has: `204` undone (the
+  name stays with this key and is no longer tied to the Discord account that asked; a claim link from this key ties it
+  to an account again), `404` (`nothing_scheduled`), or §2's refusals.
+- When the change takes effect, a link that is up gets one last notice, then the relay closes it:
+
+```json
+{"notice":"name","host":"<HOST>","scheduled":null,"done":{"to":"<64 lower-case hex>"|null,"at":<time>}}
+```
+
+  The mod then says that the name moved away (or was released) instead of the usual refusal explanations.
+- A server whose key the name is scheduled to move to gets its requests (control, data, dns) refused with `403` and the
+  header `X-Kwa-Moving-At: <at>` until then; the mod reads it from the refused WebSocket upgrade, says when it takes the
+  name over, and connects then by itself. No DNS-01 record, so no certificate, for that key before the switch.
 
 ## 4. Data streams
 
@@ -257,8 +300,8 @@ Not a hosted-service protocol, but the launcher integration depends on it:
   opens `https://<host>:<port>/launcher#secret=<64 lower-case hex>`. The page posts the secret in a JSON body to
   `POST /api/auth/launcher`; the mod redeems it with `login_redeem` for `kilnwarden`, and once more for the old id
   `kiln-webadmin` when Kiln.Admin refuses the first (launchers made before the rename mint for that id).
-- Kiln Launchers released so far look for the old id (`kiln-webadmin`) and its data folder, so "Open web panel" shows
-  for Kilnwarden from Kiln 0.2.0-dev.31.14 (coming soon).
+- Kiln Launchers before Kiln 0.2.0-dev.31.14 look for the old id (`kiln-webadmin`) and its data folder, so "Open web
+  panel" shows for Kilnwarden from Kiln 0.2.0-dev.31.14.
 
 ## 8. Trust, in short
 
@@ -267,11 +310,14 @@ Not a hosted-service protocol, but the launcher integration depends on it:
   obtain a certificate for `HOST` from a public CA. Browsers would then trust a relay that terminated TLS itself. The
   owner's protection is the operator's commitment (frostdev.io never decrypts) and, where the owner controls the DNS
   zone, a CAA record with `accounturi` pinning the panel's own ACME account (`tls/acme/account.json` holds its URL). On
-  `kiln.nexus` the zone is the operator's, so only the commitment applies.
+  `kiln.nexus` the zone is the operator's, so only the commitment applies (the Kiln privacy page,
+  https://frostdev.io/kiln/privacy, states it). A `kiln.nexus` CAA record forbids wildcard certificates, so no single
+  certificate covers every panel name.
 - The relay reports browser addresses honestly (section 3); the allowlist and per-IP limits rely on that.
 
 ## Change log
 
 | Mod version | Change |
 |---|---|
+| 0.1.1 | Claim links on the claim pages' own origin, `https://claim.<ZONE>/claim?...` (§1.1). The control link asks for notices (`X-Kwa-Notices: 1`) and takes the name notice (§3.1), ignoring notices it does not know; the `move-undo` request (§2, §3.1); the `403` with `X-Kwa-Moving-At` for a key a name moves to. |
 | 0.1.0 | First version: relay `kwa-relay/1` (control, data, dns-add, dns-remove, and claim links, §1.1), broker `v=1`, the launcher handoff. Panel names are `<name>.kiln.nexus`; the relay's API (`ORIGIN`) and the broker are on `https://frostdev.io`. The broker refuses a `return` URL on frostdev.io or its subdomains, at the apex `kiln.nexus`, at a reserved name or deeper than one label under it. |

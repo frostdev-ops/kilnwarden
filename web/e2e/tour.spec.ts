@@ -28,7 +28,7 @@ const SETTINGS_TABS: [string, string][] = [['Address and TLS', 'address'], ['Cer
 const EXPECTED = [/status of 404 .* @ .*\/api\/core\/map-assets\//];
 /** ...and the flows' own doing: the refusals they provoke (a recent proof, a refused settings file, a failed read). */
 const PROVOKED = [...EXPECTED, /status of 403 .* @ .*\/api\/core\/settings\/files\/branding/, /status of 422 .* @ .*\/api\/core\/settings\/files\/acme/,
-  /status of 500 .* @ .*\/api\/activity\/players/];
+  /status of 500 .* @ .*\/api\/activity\/players/, /status of 409 .* @ .*\/api\/core\/relay\/move\/undo/];
 
 let state: Awaited<ReturnType<BrowserContext['storageState']>> | null = null;
 
@@ -310,20 +310,48 @@ test('flows: dialog, filter, empty and error states, the re-auth prompt, setting
   // signed with the panel's relay key (the recent proof from the branding save still holds)
   await page.getByRole('tab', { name: 'Hosted access', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Make a claim link', exact: true })).toBeVisible();
+  // owner decision 2026-11-25: word for word, at the top of the tab
+  await expect(page.getByTestId('kiln-nexus-note')).toHaveText("kiln.nexus is frostdev's own domain for Kiln. It has no affiliation with Nexus Mods (nexusmods.com).");
+  await expect(page.getByTestId('kiln-nexus-note')).toBeInViewport();
   await page.getByLabel('Registered name', { exact: true }).fill('tour.kiln.nexus');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Make a claim link', exact: true }).click();
   const claim = page.getByRole('link', { name: 'Open the claim page', exact: true });
-  await expect(claim).toHaveAttribute('href', /^https:\/\/frostdev\.io\/kiln\/webadmin\/names\/claim\?v=1&host=tour\.kiln\.nexus&key=[A-Za-z0-9_-]+&time=\d+&nonce=[A-Za-z0-9_-]{43}&sig=[A-Za-z0-9_-]+$/);
+  // 0.1.1 (lane L1b): the claim pages' own origin, claim.<the name's zone>
+  await expect(claim).toHaveAttribute('href', /^https:\/\/claim\.kiln\.nexus\/claim\?v=1&host=tour\.kiln\.nexus&key=[A-Za-z0-9_-]+&time=\d+&nonce=[A-Za-z0-9_-]{43}&sig=[A-Za-z0-9_-]+$/);
   await expect(claim).toHaveAttribute('target', '_blank');
   await expect(claim).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(page.getByText(/whoever opens it first can claim/)).toBeVisible();
   await expect(page.getByText('Hosted access is off: switch it on and save, or the claimed name lapses an hour after the claim.')).toBeVisible();
   const fp = (await jsonCall(page, '/api/core/relay', 'GET')).data.fingerprint as string;
   await expect(page.getByText(fp.slice(0, 32).match(/.{4}/g)!.join(' '), { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'My panel name', exact: true })).toHaveAttribute('href', 'https://frostdev.io/kiln/webadmin/names');
+  await expect(page.getByRole('link', { name: 'Your panel name', exact: true })).toHaveAttribute('href', 'https://claim.kiln.nexus/');
   await shot(page, 'desktop-panel-settings-claim-link');
+  // lane L1b: the relay tells the panel its name is being moved (a 24-hour wait asked with the Discord account): the banner
+  // on every page, with Undo for the owner. The dev host has no relay, so its status is given the notice here; the undo
+  // first goes to the real panel (hosted access is off: nothing to undo), then to a stand-in for the relay's answer.
+  const at = new Date(Date.now() + 24 * 3600_000).toISOString();
+  await page.route('**/api/core/relay', async (route) => {
+    const res = await route.fetch();
+    route.fulfill({ response: res, json: { ...(await res.json()), enabled: true, scheduled: { to: 'ab'.repeat(32), requested: new Date().toISOString(), at } } });
+  });
+  await page.goto('/');
+  const banner = page.getByRole('status').filter({ hasText: "This panel's name tour.kiln.nexus is being moved to another server on" });
+  await expect(banner).toBeVisible();
+  await expect(banner.getByText('Not you?')).toBeVisible();
+  await expect(banner.getByText(/secure your Discord account/)).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'claim.kiln.nexus', exact: true })).toHaveAttribute('href', 'https://claim.kiln.nexus/');
+  await shot(page, 'desktop-move-banner');
+  await banner.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(banner.getByText('Hosted access is off: there is nothing to undo.')).toBeVisible();
+  await page.route('**/api/core/relay/move/undo', (route) => route.fulfill({ json: { undone: true, host: 'tour.kiln.nexus' } }));
+  await banner.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByText('Undone: tour.kiln.nexus stays with this server.')).toBeVisible();
+  await shot(page, 'desktop-move-banner-undone');
+  await page.unroute('**/api/core/relay/move/undo');
+  await page.unroute('**/api/core/relay');
+  await page.goto('/settings#relay');
   await page.getByLabel('Registered name', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();

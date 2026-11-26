@@ -22,7 +22,7 @@ we didn't.
 
 Anything that lets someone do in the panel what their account or role should not allow, read what they should not
 read, or reach the server in a way the owner did not turn on. That includes frostdev.io's hosted services for
-Kilnwarden (the relay for `<name>.kiln.nexus` and the Discord sign-in broker, both coming soon).
+Kilnwarden: the relay for `<name>.kiln.nexus`, its claim pages at `claim.kiln.nexus`, and the Discord sign-in broker.
 
 Please don't test against servers or panels that aren't yours, and don't run load tests against frostdev.io or
 kiln.nexus. A local panel (see "Building from source" in the README) is the place to try things.

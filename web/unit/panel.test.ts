@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createApi } from "../src/api/http";
 import { groupEvents } from "../src/api/laneC";
 import {
-  TLS_ENGINES, TLS_MODES, arrange, enumName, enumValue, eventText, imageType, isClaimUrl, isLoopback, move, panelEndpoints, shortFingerprint,
+  TLS_ENGINES, TLS_MODES, arrange, enumName, enumValue, eventText, imageType, isClaimPages, isClaimUrl, isLoopback, move, panelEndpoints, scheduledText,
+  shortFingerprint,
 } from "../src/api/panel";
 import { durationShort, formatValue } from "../src/ui/chartMath";
 import { ago, duration, sentence } from "../src/ui/format";
@@ -121,20 +122,43 @@ describe("claim links (hosted access, lane L1)", () => {
     expect(shortFingerprint(null)).toBe("");
   });
 
-  test("only the relay's https claim page becomes a link", () => {
-    expect(isClaimUrl("https://frostdev.io/kiln/webadmin/names/claim?v=1&host=a.kiln.nexus&key=x")).toBe(true);
-    expect(isClaimUrl("http://127.0.0.1:8443/kiln/webadmin/names/claim?v=1&host=a")).toBe(true);
-    for (const bad of ["javascript:alert(1)//https://frostdev.io/kiln/webadmin/names/claim?v=1&", "http://frostdev.io/kiln/webadmin/names/claim?v=1&",
-      "https://frostdev.io/kiln/webadmin/names/other?v=1&", "https://evil.example@/kiln/webadmin/names/claim?v=1&", " https://frostdev.io/kiln/webadmin/names/claim?v=1&"]) {
+  test("only the claim pages' own https origin (claim.<zone>, 0.1.1) becomes a link", () => {
+    expect(isClaimUrl("https://claim.kiln.nexus/claim?v=1&host=a.kiln.nexus&key=x")).toBe(true);
+    expect(isClaimUrl("https://claim.panel.test:8443/claim?v=1&host=a")).toBe(true);
+    for (const bad of ["javascript:alert(1)//https://claim.kiln.nexus/claim?v=1&", "http://claim.kiln.nexus/claim?v=1&",
+      "https://claim.kiln.nexus/other?v=1&", "https://evil.example@claim.kiln.nexus/claim?v=1&", " https://claim.kiln.nexus/claim?v=1&",
+      // 0.1.0's links on frostdev.io, and names that are not the claim pages
+      "https://frostdev.io/kiln/webadmin/names/claim?v=1&host=a.kiln.nexus", "https://claim/claim?v=1&", "https://myclaim.kiln.nexus/claim?v=1&",
+      "https://claim.kiln.nexus/x/claim?v=1&", "https://claim.kiln.nexus/claim?v=2&"]) {
       expect(isClaimUrl(bad)).toBe(false);
     }
+    expect(isClaimPages("https://claim.kiln.nexus/")).toBe(true);
+    for (const bad of [null, undefined, "", "https://claim.kiln.nexus/x", "https://frostdev.io/kiln/webadmin/names", "javascript:alert(1)//https://claim.kiln.nexus/"]) {
+      expect(isClaimPages(bad)).toBe(false);
+    }
+  });
+
+  test("a scheduled move or release of the panel's name in a sentence (lane L1b)", () => {
+    const at = "26 Nov 2026, 9:00 AM";
+    expect(scheduledText("a.kiln.nexus", { to: "ab".repeat(32), requested: "x", at: "y" }, at)).toBe("This panel's name a.kiln.nexus is being moved to another server on 26 Nov 2026, 9:00 AM.");
+    expect(scheduledText("a.kiln.nexus", { to: null, requested: "x", at: "y" }, at)).toContain("is being released on 26 Nov 2026, 9:00 AM");
+  });
+
+  test("Undo posts to the relay's undo route", async () => {
+    const calls: { url: string; method: string }[] = [];
+    const p = panelEndpoints(createApi(async (url, init) => {
+      calls.push({ url: String(url), method: String(init.method) });
+      return Response.json({ undone: true, host: "a.kiln.nexus" });
+    }));
+    expect((await p.relayUndo()).undone).toBe(true);
+    expect(calls).toEqual([{ url: "/api/core/relay/move/undo", method: "POST" }]);
   });
 
   test("Make a claim link posts to the relay's claim route", async () => {
     const calls: { url: string; method: string }[] = [];
     const p = panelEndpoints(createApi(async (url, init) => {
       calls.push({ url: String(url), method: String(init.method) });
-      return Response.json({ url: "https://frostdev.io/kiln/webadmin/names/claim?v=1&", host: "a.kiln.nexus", fingerprint: "ab", expires: "2026-11-25T00:00:00Z", warnings: [] });
+      return Response.json({ url: "https://claim.kiln.nexus/claim?v=1&", host: "a.kiln.nexus", fingerprint: "ab", expires: "2026-11-25T00:00:00Z", warnings: [] });
     }));
     const link = await p.relayClaim();
     expect(calls).toEqual([{ url: "/api/core/relay/claim", method: "POST" }]);

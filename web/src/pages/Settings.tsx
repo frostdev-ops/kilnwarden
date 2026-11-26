@@ -9,7 +9,7 @@ import { ep, session, useSession } from "../app/context";
 import { panel } from "../app/panel";
 import { isApiError } from "../api/http";
 import {
-  ALWAYS_ON, TLS_ENGINES, TLS_MODES, enumName, enumValue, imageType, isClaimUrl, isLoopback, shortFingerprint, type AcmeChallenge, type ModuleSwitch,
+  ALWAYS_ON, KILN_NEXUS_NOTE, TLS_ENGINES, TLS_MODES, enumName, enumValue, imageType, isClaimPages, isClaimUrl, isLoopback, shortFingerprint, type AcmeChallenge, type ModuleSwitch,
   type RelayClaimLink, type RelayStatus, type RoleMapping, type ServerSettings, type SettingsFile, type SettingsFileId, type SettingsFiles, type TlsEngine,
   type TlsMode,
 } from "../api/panel";
@@ -560,6 +560,7 @@ function RelayTab({ edit }: { edit: boolean }) {
     <>
       <Card title="Hosted access" sub="Reach the panel at a kiln.nexus name without forwarding a port." actions={r && <Pill tone={tone}>{label}</Pill>}>
         <div className="wa-form wa-form-wide">
+          <p className="wa-p" data-testid="kiln-nexus-note"><strong>{KILN_NEXUS_NOTE}</strong></p>
           <p className="wa-p">The panel keeps one connection open to the relay, and the relay passes browsers' encrypted traffic through to it by name.
             <strong> The relay never decrypts the traffic:</strong> TLS ends here, with a certificate whose key never leaves this server.</p>
           {status.isError ? <LoadError what="The relay's status" error={status.error} retry={() => void status.refetch()} />
@@ -570,7 +571,16 @@ function RelayTab({ edit }: { edit: boolean }) {
                   <dt>Name</dt><dd className="k-mono">{r.host || "not set"}</dd>
                   <dt>Relay</dt><dd className="k-mono">{r.origin}</dd>
                   {r.since && <><dt>Since</dt><dd>{when(r.since)}</dd></>}
+                  {r.scheduled && (
+                    <><dt>Scheduled</dt><dd>{r.scheduled.to === null ? "released" : `moved to the key ${shortFingerprint(r.scheduled.to)}`} on {when(r.scheduled.at)} (see the notice at the top: Undo)</dd></>
+                  )}
                 </dl>
+                {r.movingHere && (
+                  <Banner tone="info" title={`${r.host} is moving to this server`}>
+                    It switches on {when(r.movingHere)}: for 24 hours the server it leaves keeps the name and can undo the move. This panel connects then
+                    by itself, and gets its certificate after that.
+                  </Banner>
+                )}
                 {r.enabled && r.waitingFor.length > 0 && (
                   <Banner tone="warn" title="Waiting for">
                     <ul className="wa-problems">{r.waitingFor.map((w) => <li key={w}>{sentence(w)}</li>)}</ul>
@@ -629,13 +639,14 @@ function ClaimCard({ r, edit }: { r: RelayStatus; edit: boolean }) {
       setOutcome(claimRefused(e));
     },
   });
-  const where = r.namesPage ? new URL(r.namesPage).host : "the relay";
+  const where = isClaimPages(r.namesPage) ? new URL(r.namesPage).host : "the relay";
   return (
     <Card title="Claim this name" sub="With your Discord account, without waiting for the relay's operator.">
       <div className="wa-form wa-form-wide">
-        <p className="wa-p">Members of the Kiln Discord server claim the name above for this server themselves, on {where}'s claim page (one name per
+        <p className="wa-p">Members of the Kiln Discord server claim the name above for this server themselves, on the claim pages at {where} (one name per
           Discord account). The link proves the claim comes from this server's key; it works once, for 15 minutes. Once the name is claimed, the
-          panel connects within seconds if hosted access is on; an unused claim lapses after an hour.</p>
+          panel connects within seconds if hosted access is on; an unused claim lapses after an hour. A name already in use on another server
+          moves here 24 hours after the claim: that server keeps it until then and can undo the move.</p>
         <dl className="wa-kv">
           <dt>Name</dt><dd className="k-mono">{r.host || "not set"}</dd>
           {r.fingerprint && <><dt>Key fingerprint</dt><dd className="k-mono" title={r.fingerprint}>{shortFingerprint(r.fingerprint)}</dd></>}
@@ -660,8 +671,8 @@ function ClaimCard({ r, edit }: { r: RelayStatus; edit: boolean }) {
             </div>
           </Banner>
         )}
-        {r.namesPage && isClaimUrl(`${r.namesPage}/claim?v=1&`) && (
-          <p className="wa-note">Your name, its state, releasing it and moving it to a new key: <a href={r.namesPage} target="_blank" rel="noopener noreferrer">My panel name</a>.</p>
+        {isClaimPages(r.namesPage) && (
+          <p className="wa-note">Your name, its state, what is scheduled for it, releasing it and moving it to a new key: <a href={r.namesPage} target="_blank" rel="noopener noreferrer">Your panel name</a>.</p>
         )}
       </div>
     </Card>
