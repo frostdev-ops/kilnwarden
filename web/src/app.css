@@ -305,6 +305,15 @@ textarea.k-input.wa-textarea { height: auto; min-height: 0; padding: 8px 10px; l
    without :has()). tour-map.spec.ts checks it stays hidden, so a refresh of the vendored pages that moves it fails there */
 .wa-map-noart .ka-map-area > div:has(> .k-banner) { display: none; }
 .wa-map-noart .ka-map-area > div[style*="z-index: 1001"] { display: none; }
+/* Dialogs and menus over the Map page take their clicks (0.1.4). The map's Leaflet layers carry z-indexes of 400 to
+   1200 (its panes, its canvas, its controls, the search results and the context menu), and nothing around them made a
+   stacking context, so they sat above everything the panel puts on the body (dialogs at 50: the identity prompt, the
+   admin pages' confirmations) and above the account menu (40) and the phone's page menu (30), and took their clicks.
+   The map root keeps its layers to itself (the launcher's map.css does the same); the page area keeps whatever any
+   page holds below the shell's menus and the body's layers (dialogs 50, toasts 60, the drag ghost 3000), whatever
+   z-index it uses. tour-map-dialogs.spec.ts clicks across each of them. */
+.ka-map-root { isolation: isolate; }
+.wa-main { isolation: isolate; }
 
 /* the launcher's admin pages inside the panel on a phone: their two-column layouts stack (their look is unchanged) */
 @media (max-width: 860px) {

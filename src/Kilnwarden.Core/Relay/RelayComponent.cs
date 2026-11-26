@@ -45,6 +45,7 @@ internal sealed class RelayComponent : IWebAdminComponent
         Volatile.Write(ref _problem, state == "connected" ? null : problem ?? Volatile.Read(ref _problem));
         Volatile.Write(ref _since, _builder.Environment.Time.GetUtcNow().ToString("O"));
         if (state == "connected" && was != "connected") _status?.RaiseConnected();
+        else if (state != "connected" && was == "connected") _status?.RaiseDisconnected();
     }
 
     public string Name => "relay";

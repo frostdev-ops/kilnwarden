@@ -1,8 +1,9 @@
 // The Map page in the panel (0.1.3), at 1280x800 and 390x844: the map fills the height the panel has, the same on the
 // side panel's three tabs (Markers, Find & filter, Live), the side panel scrolls on its own, the side toggle and the
 // search results; and the map art: without it the page says so with the one action that fixes it (copy the Kiln
-// Launcher's art from this computer, the dev host's --launcher-assets stand-in), or the steps behind Details. It never
-// says "Preparing map art…". Runs after panel.spec.ts (the owner it makes). Screenshots in KWA_SCREENS (map-*).
+// Launcher's art from this computer, the dev host's --launcher-assets stand-in, in one click with no identity prompt
+// since 0.1.4), or the steps behind Details. It never says "Preparing map art…". Runs after panel.spec.ts (the owner it
+// makes). Screenshots in KWA_SCREENS (map-*). Dialogs and menus over the map: tour-map-dialogs.spec.ts.
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -132,15 +133,13 @@ test('the Kiln Launcher on this computer: one button copies its map art, and the
   await expect(copy).toBeVisible();
   await expect(page.getByText('Preparing map art…')).toHaveCount(0);
   await page.screenshot({ path: resolve(SHOTS, 'map-desktop-no-art-launcher.png') });
-  await copy.click();
-  // a copy asks for a recent proof (the shell's dialog), then goes when pressed again
-  const prompt = page.getByRole('dialog', { name: 'Confirm your identity', exact: true });
-  await expect(prompt).toBeVisible();
-  await prompt.getByLabel('Your password', { exact: true }).fill('OnlyDisposableTests-42!');
-  await prompt.getByRole('button', { name: 'Confirm identity', exact: true }).click();
-  await prompt.getByRole('button', { name: 'Return to the action', exact: true }).click();
+  // one click copies it: no identity prompt first (0.1.4; 0.1.3 asked for the password again), no dialog at all
+  const answers: string[] = [];
+  page.on('response', (r) => { if (r.url().endsWith('/api/core/map-assets/copy')) answers.push(`copy answered ${r.status()}`); });
   await copy.click();
   await expect(note).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(answers).toEqual(['copy answered 202']);
   const status = await page.evaluate(async () => (await fetch('/api/core/map-assets-status')).json());
   expect(status).toMatchObject({ present: true, launcher: true, copy: { state: 'done', files: 3 } });
   await page.screenshot({ path: resolve(SHOTS, 'map-desktop-art-copied.png') });

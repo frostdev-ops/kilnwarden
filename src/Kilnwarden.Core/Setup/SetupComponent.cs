@@ -49,6 +49,16 @@ internal sealed class SetupOptions
 
     /// <summary>The Discord broker's reachability check (0.1.3): null when it answers, else what went wrong.</summary>
     public Func<string, CancellationToken, Task<string?>>? BrokerCheck { get; init; }
+
+    /// <summary>How long the first passed address check holds before it runs again (default <see cref="RecheckSchedule.First"/>).</summary>
+    public TimeSpan? RecheckEvery { get; init; }
+
+    /// <summary>The longest a passed address check holds (default six times <see cref="RecheckEvery"/>).</summary>
+    public TimeSpan? RecheckLongest { get; init; }
+
+    /// <summary>How long past its recheck a passed check still counts for the launcher's address (default
+    /// <see cref="RecheckSchedule.Grace"/>).</summary>
+    public TimeSpan? RecheckGrace { get; init; }
 }
 
 /// <summary>One line of the setup checklist: <see cref="State"/> is "done", "working" (it is happening by itself),
@@ -64,7 +74,7 @@ public sealed record SetupProblem(string Title, string Fix, string? Detail = nul
 /// <c>kilnwarden setup</c>, <c>kilnwarden setup hosted &lt;name&gt;</c> and <c>kilnwarden status</c>. It writes the
 /// settings the old manual setup asked for by hand (relay.json, settings.json tls, acme.json DNS-01) and watches each
 /// step until the panel really answers at its address.</summary>
-public sealed class SetupComponent : IWebAdminComponent
+public sealed class SetupComponent : IWebAdminComponent, IPublicAddress
 {
     public const string ModuleId = "setup";
     public const string Launcher = "0.2.0-dev.31.14";
@@ -77,10 +87,18 @@ public sealed class SetupComponent : IWebAdminComponent
     private bool _existed;
     private ITimer? _timer;
     private SelfProbe _prober = null!;
-    private (string Key, SelfProbe.Result Result)? _probe;
+    // the last address check and what it was for: one object, so a reader (the launcher's public address among them)
+    // never pairs one check's key with another's result, as a struct copied while the check's task writes it could
+    private Probed? _probe;
     private int _probing;
+    private RecheckSchedule _schedule = null!;
+    // the relay link's ups and downs: a change starts the address check's schedule again
+    private int _linkChanges;
     private CancellationTokenSource? _life;
     private (DateTimeOffset At, SetupDetect.Facts Facts)? _facts;
+    private readonly Lock _publicLock = new();
+    private readonly Lock _refreshGate = new();
+    private PublicAddress? _public;
 
     public SetupComponent() : this(null)
     {
@@ -109,8 +127,10 @@ public sealed class SetupComponent : IWebAdminComponent
         _progress = b.SettingsFile<SetupProgress>("setup.json", SetupProgress.Validate);
         _window = new HostedSetupWindow(b.Environment.Time, () => b.Services.TryGet<AuthService>()?.OwnerExists == true);
         _prober = _o.Probe ?? new SelfProbe();
+        _schedule = new RecheckSchedule(_o.RecheckEvery, _o.RecheckLongest, _o.RecheckGrace);
         b.Services.Add(_window);
         b.Services.Add(this);
+        b.Services.Add<IPublicAddress>(this);
         var m = b.Modules.Register(new ModuleSpec
         {
             Id = ModuleId, Title = "Setup", Icon = "wand-sparkles", CanDisable = false,
@@ -125,15 +145,29 @@ public sealed class SetupComponent : IWebAdminComponent
         // a panel that had its owner before 0.1.2: its setup is done
         if (!_existed && Auth.OwnerExists) Save(p => { p.Done = true; p.DoneAt = Time.GetUtcNow(); });
         var every = _o.ProbeEvery ?? TimeSpan.FromSeconds(15);
-        _timer = Time.CreateTimer(_ => MaybeProbe(), null, every, every);
-        if (Relay is { } r) r.Connected += OnRelayConnected;
+        _timer = Time.CreateTimer(_ =>
+        {
+            MaybeProbe();
+            RefreshPublic();
+        }, null, every, every);
+        if (Relay is { } r)
+        {
+            r.Connected += OnRelayConnected;
+            r.Disconnected += OnRelayDisconnected;
+        }
+        _b.SetupState.Changed += RefreshPublic;
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken ct)
     {
         _timer?.Dispose();
-        if (Relay is { } r) r.Connected -= OnRelayConnected;
+        if (Relay is { } r)
+        {
+            r.Connected -= OnRelayConnected;
+            r.Disconnected -= OnRelayDisconnected;
+        }
+        _b.SetupState.Changed -= RefreshPublic;
         _life?.Cancel();
         _life?.Dispose();
         return Task.CompletedTask;
@@ -141,8 +175,103 @@ public sealed class SetupComponent : IWebAdminComponent
 
     private void OnRelayConnected()
     {
+        Interlocked.Increment(ref _linkChanges);
         if (RelayStore?.Current is { Enabled: true, Host.Length: > 0 } s && Progress.ClaimedHost != s.Host) Save(p => p.ClaimedHost = s.Host);
+        RefreshPublic();
     }
+
+    private void OnRelayDisconnected()
+    {
+        Interlocked.Increment(ref _linkChanges);
+        RefreshPublic();
+    }
+
+    // ------------------------------------------------------------------------------------------------ the public address
+
+    /// <summary>The address the Kiln Launcher is given (launcher-endpoint.json <c>public</c>): as of the last check, which
+    /// runs with every round of the address check, on the relay link's changes and on the owner's creation.</summary>
+    public PublicAddress? Public
+    {
+        get
+        {
+            lock (_publicLock) return _public;
+        }
+    }
+
+    /// <summary>Fires (any thread) when <see cref="Public"/> changed.</summary>
+    public event Action? PublicChanged;
+
+    event Action? IPublicAddress.Changed
+    {
+        add => PublicChanged += value;
+        remove => PublicChanged -= value;
+    }
+
+    /// <summary>Works out <see cref="Public"/> again and raises <see cref="PublicChanged"/> when it changed.</summary>
+    internal void RefreshPublic()
+    {
+        PublicAddress? now;
+        // one at a time, so an older answer never overwrites a newer one; the getter's lock is another, never held
+        // while the checklist is read
+        lock (_refreshGate)
+        {
+            try
+            {
+                now = CurrentPublic();
+            }
+            catch (InvalidOperationException)
+            {
+                return; // still starting
+            }
+            lock (_publicLock)
+            {
+                if (now == _public) return;
+                _public = now;
+            }
+        }
+        _b.Log.Info(now is null ? $"{Product.Name}: the Kiln Launcher opens the panel on the server's own computer for now"
+            : $"{Product.Name}: the Kiln Launcher's Open web panel opens {now.Url}");
+        try
+        {
+            PublicChanged?.Invoke();
+        }
+        catch (Exception e)
+        {
+            _b.Log.Error("a public address listener failed", e);
+        }
+    }
+
+    /// <summary>The address while it really works, else null: the launcher can sign in there (<see cref="LauncherCanSignIn"/>),
+    /// and the route's whole checklist is done (the wizard's "Ready"), with the last check of the address passed for the
+    /// certificate the panel serves now and still counting (<see cref="RecheckSchedule.Holds"/>).</summary>
+    private PublicAddress? CurrentPublic()
+    {
+        if (_life is not { IsCancellationRequested: false } || !LauncherCanSignIn) return null;
+        if (_b.Services.Get<RelayTarget>().Listener()?.Tls?.Certificate.Sha256 is not { } served) return null;
+        if (HostedSteps(out var host) is { } hs)
+            return hs.All(s => s.State == "done") && Passed($"hosted:{host}:{served}:trusted") ? new PublicAddress($"https://{host}/", served) : null;
+        if (OwnSteps(out var ownHost, out var ownPort) is { } os)
+            return os.All(s => s.State == "done") && Passed($"own:{ownHost}:{ownPort}:{served}:trusted")
+                ? new PublicAddress($"https://{ownHost}{(ownPort == 443 ? "" : $":{ownPort}")}/", served) : null;
+        return null;
+    }
+
+    /// <summary>The owner exists (before that the launcher's login grants only a setup token, and those work on the
+    /// server's own computer only) and auth.json launcherLogin is on: the launcher's login works at the public address.
+    /// Otherwise the file names none, and a passed address check is not run again (0.1.4).</summary>
+    private bool LauncherCanSignIn => Auth.OwnerExists && Auth.Settings.LauncherLogin;
+
+    /// <summary>The last check was of <paramref name="key"/>, passed, and still counts (<see cref="RecheckSchedule.Holds"/>).</summary>
+    private bool Passed(string key) => _probe is { } p && p.Key == key && _schedule.Holds(CheckContext(key), p.Result, Time.GetUtcNow());
+
+    /// <summary>What a check of <paramref name="key"/> stands for right now: the key, the relay link's changes so far and
+    /// the listener serving the panel.</summary>
+    private RecheckSchedule.Context CheckContext(string key) => new(key, Volatile.Read(ref _linkChanges), _b.Services.Get<RelayTarget>().Listener());
+
+    /// <summary>How long the next passed check of the current address will hold (tests); null while none is waited for.</summary>
+    internal TimeSpan? RecheckInterval => CheckTarget(Acme?.Good) is { } t ? _schedule.Every(CheckContext(t.Key)) : null;
+
+    private sealed record Probed(string Key, SelfProbe.Result Result);
 
     private readonly Lock _saveLock = new();
 
@@ -485,28 +614,18 @@ public sealed class SetupComponent : IWebAdminComponent
         try
         {
             if (_life is not { IsCancellationRequested: false } life) return;
-            var acme = Acme;
-            var named = acme?.Good;
+            var named = Acme?.Good;
             var loopback = _b.Server.Certificate;
-            string host;
-            int port;
-            bool trusted;
-            string key;
-            if (HostedSteps(out var h) is { } hs && hs[0].State == "done" && hs[1].State == "done" && hs[2].State == "done")
-            {
-                (host, port, trusted) = (h, 443, true);
-                key = $"hosted:{host}:{named?.Info.Sha256}:trusted";
-            }
-            else if (Progress.Route == "own" && Progress.OwnHost is { Length: > 0 } oh)
-            {
-                host = oh;
-                port = Progress.OwnPort > 0 ? Progress.OwnPort : PanelPort();
-                trusted = named is { } g && g.Info.Names.Contains(oh, StringComparer.OrdinalIgnoreCase);
-                key = $"own:{host}:{port}:{named?.Info.Sha256}:{(trusted ? "trusted" : "any")}";
-            }
-            else return;
-            if (_probe is { } last && last.Key == key && (last.Result.Ok || Time.GetUtcNow() - last.Result.At < TimeSpan.FromSeconds(10))) return;
+            if (CheckTarget(named) is not { } target) return;
+            var (host, port, trusted, key) = target;
+            var context = CheckContext(key);
+            // a failed check runs again after 10 s, a passed one on its schedule (it may stop passing), and only while the
+            // launcher could use the address it names; without that the wizard's Ready keeps the last pass, as before 0.1.4
+            var last = _probe is { } l && l.Key == key ? l.Result : null;
+            if (last is { Ok: true } && !LauncherCanSignIn) return;
+            if (last is not null && !_schedule.Due(context, last, Time.GetUtcNow())) return;
             if (Interlocked.CompareExchange(ref _probing, 1, 0) != 0) return;
+            var wasOk = last?.Ok == true;
             var ours = new List<string>();
             if (named is not null) ours.Add(named.Info.Sha256);
             if (loopback is not null) ours.Add(loopback.Sha256);
@@ -515,24 +634,41 @@ public sealed class SetupComponent : IWebAdminComponent
                 try
                 {
                     var r = await _prober.RunAsync(host, port, ours, trusted, Time, life.Token).ConfigureAwait(false);
-                    _probe = (key, r);
+                    _schedule.Checked(context, r.Ok);
+                    _probe = new Probed(key, r);
                     if (!r.Ok) _b.Log.Debug($"setup: the check of {host}:{port} failed ({r.Kind}: {r.Detail})");
-                    else _b.Log.Info($"{Product.Name}: your panel answers at https://{host}{(port == 443 ? "" : $":{port}")}/");
+                    else if (!wasOk) _b.Log.Info($"{Product.Name}: your panel answers at https://{host}{(port == 443 ? "" : $":{port}")}/");
                 }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 {
-                    _probe = (key, new SelfProbe.Result(false, "other", e.Message, Time.GetUtcNow()));
+                    _schedule.Checked(context, false);
+                    _probe = new Probed(key, new SelfProbe.Result(false, "other", e.Message, Time.GetUtcNow()));
                 }
                 finally
                 {
                     Volatile.Write(ref _probing, 0);
                 }
+                RefreshPublic();
             });
         }
         catch (InvalidOperationException)
         {
             // still starting
         }
+    }
+
+    /// <summary>What the address check checks now: the address, whether its certificate must be trusted, and the check's
+    /// key (the route, the name, the port, the certificate, the trust). Null while no route waits for it.</summary>
+    /// <param name="named">The certificate Let's Encrypt issued for the name (<see cref="AcmeManager.Good"/>), read once by
+    /// the caller.</param>
+    private (string Host, int Port, bool Trusted, string Key)? CheckTarget(Tls.CertificateMaterial? named)
+    {
+        if (HostedSteps(out var h) is { } hs && hs[0].State == "done" && hs[1].State == "done" && hs[2].State == "done")
+            return (h, 443, true, $"hosted:{h}:{named?.Info.Sha256}:trusted");
+        if (Progress.Route != "own" || Progress.OwnHost is not { Length: > 0 } oh) return null;
+        var port = Progress.OwnPort > 0 ? Progress.OwnPort : PanelPort();
+        var trusted = named is { } g && g.Info.Names.Contains(oh, StringComparer.OrdinalIgnoreCase);
+        return (oh, port, trusted, $"own:{oh}:{port}:{named?.Info.Sha256}:{(trusted ? "trusted" : "any")}");
     }
 
     // ------------------------------------------------------------------------------------------------ the wizard's view

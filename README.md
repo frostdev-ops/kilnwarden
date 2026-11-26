@@ -106,7 +106,9 @@ The link opens the setup wizard, one question per page:
 5. The end lists what was set up and what was skipped, with where to change each later, and the address to bookmark.
 
 The wizard comes back to where you were after a restart, and **Panel settings > Run the setup again** starts it over.
-The **Kiln Launcher**'s **Open web panel** (Kiln 0.2.0-dev.31.14 or newer) opens the wizard too, signed in.
+The **Kiln Launcher**'s **Open web panel** (Kiln 0.2.0-dev.31.14 or newer) opens the wizard too, signed in. Once your
+account exists and hosted access (or your own address) is ready, Kiln 0.2.0-dev.31.19 or newer opens the panel there,
+signed in, after checking the address itself; otherwise it opens the panel on your computer, as before.
 
 **From the server console alone** (a rented server with FTP and a web console):
 

@@ -45,8 +45,10 @@ internal sealed class FakeRelay : IWebAdminComponent
 
     public void Set(string state, string? problem = null, string? error = null)
     {
+        var was = _info.State;
         _info = _info with { State = state, Problem = problem, LastError = error };
         if (state == "connected") Status.RaiseConnected();
+        else if (was == "connected") Status.RaiseDisconnected();
     }
 
     public Task StartAsync(WebAdminServices services, CancellationToken ct) => Task.CompletedTask;

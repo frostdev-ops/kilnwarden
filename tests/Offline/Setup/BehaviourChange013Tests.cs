@@ -118,7 +118,6 @@ public sealed class BehaviourChange013Tests
         {
             await using var c = await LaneC.LaneC.StartAsync(extra: [new Kilnwarden.Static.MapAssetsComponent()]);
             using var owner = await c.UserAsync("olive", BuiltinRoles.Owner);
-            await LaneC.LaneC.ReauthAsync(owner);
             var status = (await LaneC.LaneC.JsonAsync(await owner.GetAsync("/api/core/map-assets-status")))!;
             Assert.False(status["present"]!.GetValue<bool>());
             Assert.True(status["launcher"]?.GetValue<bool>());

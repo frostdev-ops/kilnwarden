@@ -22,6 +22,15 @@ public sealed class RelayStatus(Func<RelayStatus.Info> describe)
         try { Connected?.Invoke(); }
         catch (Exception) { /* a listener's failure never takes the relay loop down */ }
     }
+
+    /// <summary>The relay link went down (any thread): it was connected and is not any more.</summary>
+    public event Action? Disconnected;
+
+    internal void RaiseDisconnected()
+    {
+        try { Disconnected?.Invoke(); }
+        catch (Exception) { /* a listener's failure never takes the relay loop down */ }
+    }
 }
 
 /// <summary>Claim links for the relay's Discord claim pages (Panel settings > Hosted access > Claim this name, and the

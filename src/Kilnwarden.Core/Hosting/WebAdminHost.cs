@@ -26,6 +26,8 @@ public sealed class WebAdminHost : IServerInfo
     private WebAdminBuilder? _builder;
     private ListenerManager? _listeners;
     private ISetupState? _setup;
+    private IPublicAddress? _public;
+    private ListenerManager.Running? _running;
     private Task? _start;
     private Task _restart = Task.CompletedTask;
     private int _stopped;
@@ -103,12 +105,23 @@ public sealed class WebAdminHost : IServerInfo
                 await c.StartAsync(Services, ct).ConfigureAwait(false);
                 lock (_started) _started.Add(c);
             }
+            // the panel's public address, when a component knows it (the setup's): the launcher's file follows it (while
+            // a listener runs; without one there is no file to write, and the listener's own change writes it)
+            if (Services.TryGet<IPublicAddress>() is { } pub)
+            {
+                _public = pub;
+                pub.Changed += () =>
+                {
+                    if (Volatile.Read(ref _running) is { } running) WriteLauncherEndpoint(running);
+                };
+            }
             _listeners = new ListenerManager(_env, Data, Settings.Current, () => _setup.OwnerExists,
                 policy => new ServerShared(Pipeline, Services, _env.Log, new ClientLimiter(_env.Time), policy),
                 () => Services.TryGet<Tls.Acme.IAcmeCertificates>(), () => _setup.SetupOpen);
             Services.Add(_listeners.Shared.Counters);
             _listeners.Changed += r =>
             {
+                Volatile.Write(ref _running, r);
                 Endpoints = r?.Endpoints ?? [];
                 Certificate = r?.Tls?.Certificate;
                 TlsEngine = r?.Tls?.Engine ?? "off";
@@ -214,7 +227,10 @@ public sealed class WebAdminHost : IServerInfo
     }
 
     // The launcher reads this file through the server folder (via SSH for its remote instances). It contains only
-    // an address and certificate fingerprint. Owner tickets are minted separately over authenticated KAP.
+    // addresses and certificate fingerprints. Owner tickets are minted separately over authenticated KAP.
+    // format 1: host, port, sha256 (this machine's address and the certificate it gets); public and publicSha256 (the
+    // panel's address on the internet and the certificate it serves there) only while that address really works
+    // (IPublicAddress), and only when that certificate is the one this listener serves. Older launchers ignore them.
     private void WriteLauncherEndpoint(ListenerManager.Running? running)
     {
         lock (_endpointGate)
@@ -225,22 +241,46 @@ public sealed class WebAdminHost : IServerInfo
             {
                 if (running is null)
                 {
-                    data.Delete(file);
+                    Retrying(() => data.Delete(file));
                     return;
                 }
                 if (Volatile.Read(ref _stopped) != 0 || !ReferenceEquals(_listeners?.Server, running.Server)) return;
                 var bind = running.Plan.Bind;
                 var address = bind.Equals(IPAddress.Any) ? IPAddress.Loopback
                     : bind.Equals(IPAddress.IPv6Any) ? IPAddress.IPv6Loopback : bind;
-                data.WriteJson(file, new
+                var o = new System.Text.Json.Nodes.JsonObject
                 {
-                    format = 1, host = address.ToString(), port = running.Server.LocalEndPoint.Port,
-                    sha256 = running.Tls?.LoopbackCertificate.Sha256,
-                });
+                    ["format"] = 1, ["host"] = address.ToString(), ["port"] = running.Server.LocalEndPoint.Port,
+                    ["sha256"] = running.Tls?.LoopbackCertificate.Sha256,
+                };
+                if (_public?.Public is { } pub && running.Tls?.Certificate.Sha256 == pub.Sha256)
+                {
+                    o["public"] = pub.Url;
+                    o["publicSha256"] = pub.Sha256;
+                }
+                Retrying(() => data.WriteJson(file, o));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 _env.Log.Warn($"Could not update {file}: {e.Message}");
+            }
+        }
+    }
+
+    // On Windows a launcher reading the file at that moment makes the replace (or the delete) fail: a few more tries, so
+    // the file does not stay behind the panel until its next change.
+    private static void Retrying(Action write)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                write();
+                return;
+            }
+            catch (Exception e) when (attempt < 5 && e is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(40 * attempt);
             }
         }
     }

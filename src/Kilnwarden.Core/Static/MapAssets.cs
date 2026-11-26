@@ -17,8 +17,11 @@ namespace Kilnwarden.Static;
 /// <item>GET /api/core/map-assets/{path}: a file (webp, png, json, bin, fonts), streamed, cached for a day.</item>
 /// <item>GET /api/core/map-assets-status: {present, folder, launcher, copy} (0.1.3: <c>launcher</c> says whether the Kiln
 /// Launcher's own copy is on this computer, <see cref="LauncherArt"/>; <c>copy</c> is the copy's progress).</item>
-/// <item>POST /api/core/map-assets/copy (owner, recent proof; 0.1.3): copies that folder's map/ and data/ here, in the
-/// background. Only the launcher's fixed places are read, and only the file types this route serves.</item>
+/// <item>POST /api/core/map-assets/copy (owner accounts only; 0.1.3): copies that folder's map/ and data/ here, in the
+/// background. Only the launcher's fixed places are read, and only the file types this route serves, within the size
+/// caps, never through a link; the copy is moved in only once complete, and never over art that is here. Since 0.1.4 it
+/// asks for no recent password (the identity prompt): it changes no setting, and the request names nothing it reads or
+/// writes. One copy at a time, and after one that failed the next waits <see cref="RetryAfterFailure"/> (429).</item>
 /// </list></summary>
 public sealed class MapAssetsComponent : IWebAdminComponent
 {
@@ -27,7 +30,15 @@ public sealed class MapAssetsComponent : IWebAdminComponent
     public const long MaxCopyBytes = 2L << 30;
     public const int MaxCopyFiles = 200_000;
 
+    /// <summary>After a copy that failed, how long before the next may start (0.1.4 review). The copy asks for no recent
+    /// password, and a failing copy writes up to <see cref="MaxCopyBytes"/> before it stops and deletes it: started back to
+    /// back, failing copies would churn the disk. A copy that succeeds needs no limit (the next is refused: the art is here),
+    /// and only one runs at a time.</summary>
+    public static readonly TimeSpan RetryAfterFailure = TimeSpan.FromSeconds(30);
+
     private readonly Func<IReadOnlyList<string>> _launcherFolders;
+    private readonly TimeProvider? _time;
+    private long _retryAtTicks;
     private CancellationTokenSource? _life;
     private string? _root;
     private IWebAdminLog? _log;
@@ -38,10 +49,12 @@ public sealed class MapAssetsComponent : IWebAdminComponent
     {
     }
 
-    /// <summary>Test and dev host hook: the places to look for the launcher's folder instead of the fixed ones.</summary>
-    internal MapAssetsComponent(Func<IReadOnlyList<string>>? launcherFolders)
+    /// <summary>Test and dev host hook: the places to look for the launcher's folder instead of the fixed ones (and, for
+    /// tests, the clock of <see cref="RetryAfterFailure"/>; else the panel's).</summary>
+    internal MapAssetsComponent(Func<IReadOnlyList<string>>? launcherFolders, TimeProvider? time = null)
     {
         _launcherFolders = launcherFolders ?? (() => LauncherArt.Candidates());
+        _time = time;
     }
 
     public string Name => "map-assets";
@@ -53,6 +66,7 @@ public sealed class MapAssetsComponent : IWebAdminComponent
     {
         var root = _root = b.Data.PathOf(Folder);
         _log = b.Log;
+        var time = _time ?? b.Environment.Time;
         var core = new ModuleRegistration(b.Modules, CoreComponent.ModuleId);
         core.MapGet("/map-assets-status", RouteAccess.SignedIn, _ =>
         {
@@ -66,13 +80,29 @@ public sealed class MapAssetsComponent : IWebAdminComponent
             }));
         });
         core.MapGet("/map-assets/{*path}", RouteAccess.SignedIn, ctx => ValueTask.FromResult(Serve(root, ctx.RouteValue("path"))));
-        core.MapPost("/map-assets/copy", RouteAccess.Requires(CoreComponent.SettingsEdit), ctx =>
+        // owner accounts only, checked here rather than by core.settings.edit, for whose changes the gate asks a recent
+        // password (0.1.4: the copy asks none, see the summary); the gate still turns away anyone signed out or with a
+        // restricted session
+        core.MapPost("/map-assets/copy", RouteAccess.SignedIn, ctx =>
         {
-            if (ctx.User is not Auth.WebPrincipal { IsOwner: true } p) throw new HttpError(403, "only the owner copies the map art");
+            if (ctx.User is not Auth.WebPrincipal { IsOwner: true } p)
+            {
+                if (ctx.User is Auth.WebPrincipal other)
+                    ctx.Services.TryGet<Security.IAuditSink>()?.Record(Auth.AuditLog.Entry("core.map_assets.copy", other, ctx.ClientAddress, false, "owner only"));
+                throw new HttpError(403, "only the owner copies the map art");
+            }
             if (Present(root)) throw new HttpError(409, "The map art is here already.");
             if (LauncherArt.Find(_launcherFolders()) is not { } source)
                 throw new HttpError(404, "The Kiln Launcher's map art isn't on this computer. Make it in the launcher (Settings, Game art), or copy it by hand.");
             if (Interlocked.CompareExchange(ref _copying, 1, 0) != 0) throw new HttpError(409, "The map art is being copied already.");
+            // a failed copy is not started again at once (RetryAfterFailure); checked once this request holds the copy
+            if (Interlocked.Read(ref _retryAtTicks) - time.GetUtcNow().UtcTicks is var left and > 0)
+            {
+                Volatile.Write(ref _copying, 0);
+                var refused = HttpResponse.Error(429, "rate_limited", "The last copy stopped a moment ago.");
+                refused.Headers.Set("Retry-After", Math.Max(1, (int)Math.Ceiling(TimeSpan.FromTicks(left).TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                return ValueTask.FromResult(refused);
+            }
             _copy = new CopyState("copying", 0, 0, null);
             var log = b.Log;
             var token = _life?.Token ?? CancellationToken.None;
@@ -86,6 +116,7 @@ public sealed class MapAssetsComponent : IWebAdminComponent
                 }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 {
+                    Interlocked.Exchange(ref _retryAtTicks, (time.GetUtcNow() + RetryAfterFailure).UtcTicks);
                     // everyone signed in reads this (the Map page's notice): plain words, never the exception's text, which
                     // names folders of this computer (the user's home, the server's folder); the log has it
                     _copy = new CopyState("failed", 0, 0, e is CopyRefused r ? r.Message

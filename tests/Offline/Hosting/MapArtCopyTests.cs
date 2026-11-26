@@ -69,13 +69,11 @@ public sealed class MapArtCopyTests
         Assert.True(status["launcher"]!.GetValue<bool>());
         Assert.Equal("idle", status["copy"]!["state"]!.GetValue<string>());
 
+        // owner accounts only (an admin with a recent password too is refused); the owner's one click copies, with no
+        // identity prompt first (0.1.4)
         await LaneC.LaneC.ReauthAsync(admin);
         Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PostAsync("/api/core/map-assets/copy")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await admin.PostAsync("/api/core/map-assets/copy")).StatusCode);
-        var r = await owner.PostAsync("/api/core/map-assets/copy");
-        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
-        Assert.Equal("reauth_required", await LaneC.LaneC.CodeAsync(r));
-        await LaneC.LaneC.ReauthAsync(owner);
         Assert.Equal(HttpStatusCode.Accepted, (await owner.PostAsync("/api/core/map-assets/copy")).StatusCode);
         for (var i = 0; i < 200; i++)
         {
@@ -95,6 +93,54 @@ public sealed class MapArtCopyTests
         Assert.Equal(HttpStatusCode.Conflict, (await owner.PostAsync("/api/core/map-assets/copy")).StatusCode);
     }
 
+    /// <summary>0.1.4: the owner's report on 0.1.3 called the identity prompt before the copy "kind of stupid". The copy
+    /// asks for no recent password now; it stays for owner accounts only, refused to anyone signed out, to a restricted
+    /// session (even the owner's), to a request from another site, and to every other account, whose refusal is
+    /// audited.</summary>
+    [Fact]
+    public async Task The_copy_is_for_owner_accounts_only_and_asks_no_recent_password()
+    {
+        using var t = new TempDir();
+        var source = Launcher(t);
+        await using var c = await LaneC.LaneC.StartAsync(extra: [new MapAssetsComponent(() => [source])]);
+        const string copy = "/api/core/map-assets/copy";
+        var art = Path.Combine(c.H.DataDir, "map-assets");
+
+        using var anon = c.H.NewClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anon.PostAsync(copy)).StatusCode);
+
+        var restricted = await c.H.AccountAsync("rory", BuiltinRoles.Owner);
+        c.H.Auth.Accounts.Update(restricted.Id, x => x with { MustChangePassword = true });
+        using var rory = c.H.NewClient();
+        Assert.Equal(HttpStatusCode.OK, (await rory.SignInAsync("rory")).StatusCode);
+        var r = await rory.PostAsync(copy);
+        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
+        Assert.Equal("password_change_required", await LaneC.LaneC.CodeAsync(r));
+
+        using var admin = await c.UserAsync("adam", BuiltinRoles.Admin);
+        await LaneC.LaneC.ReauthAsync(admin);
+        r = await admin.PostAsync(copy);
+        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
+        Assert.NotEqual("reauth_required", await LaneC.LaneC.CodeAsync(r));
+        await Eventually.True(() => c.H.Host.Services.Get<AuditLog>().Read(50).Any(e => e.GetProperty("op").GetString() == "core.map_assets.copy" &&
+            e.GetProperty("userName").GetString() == "adam" && !e.GetProperty("ok").GetBoolean()), 3000, "the admin's refusal audited");
+
+        // the owner's browser, sent from another site
+        using var owner = await c.UserAsync("olive", BuiltinRoles.Owner);
+        using var forged = new HttpRequestMessage(HttpMethod.Post, copy.TrimStart('/'));
+        forged.Headers.Add("Sec-Fetch-Site", "cross-site");
+        r = await owner.Http.SendAsync(forged);
+        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
+        Assert.Equal("csrf", await LaneC.LaneC.CodeAsync(r));
+        Assert.False(Directory.Exists(art));
+
+        // no /api/auth/reauth first: the owner's session as it is after signing in
+        Assert.Equal(HttpStatusCode.Accepted, (await owner.PostAsync(copy)).StatusCode);
+        await Eventually.True(() => Directory.Exists(Path.Combine(art, "map")), 5000, "the copy moved in");
+        await Eventually.True(() => c.H.Host.Services.Get<AuditLog>().Read(50).Any(e => e.GetProperty("op").GetString() == "core.map_assets.copy" &&
+            e.GetProperty("userName").GetString() == "olive" && e.GetProperty("ok").GetBoolean()), 3000, "the owner's copy audited");
+    }
+
     [Fact]
     public async Task Without_the_launchers_art_on_this_computer_the_copy_says_so()
     {
@@ -102,7 +148,6 @@ public sealed class MapArtCopyTests
         Directory.CreateDirectory(Path.Combine(t.Path, "empty-launcher", "admin-assets"));
         await using var c = await LaneC.LaneC.StartAsync(extra: [new MapAssetsComponent(() => [Path.Combine(t.Path, "empty-launcher", "admin-assets")])]);
         using var owner = await c.UserAsync("olive", BuiltinRoles.Owner);
-        await LaneC.LaneC.ReauthAsync(owner);
         Assert.False((await LaneC.LaneC.JsonAsync(await owner.GetAsync("/api/core/map-assets-status")))!["launcher"]!.GetValue<bool>());
         var r = await owner.PostAsync("/api/core/map-assets/copy");
         Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
@@ -120,7 +165,6 @@ public sealed class MapArtCopyTests
         await using var c = await LaneC.LaneC.StartAsync(extra: [new MapAssetsComponent(() => [source])]);
         using var viewer = await c.UserAsync("vic", BuiltinRoles.Viewer);
         using var owner = await c.UserAsync("olive", BuiltinRoles.Owner);
-        await LaneC.LaneC.ReauthAsync(owner);
         string body;
         // a file the copy cannot read (another program holds it): the copy stops
         using (new FileStream(Path.Combine(source, "map", "tiles", "0", "0_0.webp"), FileMode.Open, FileAccess.Read, FileShare.None))
@@ -141,6 +185,59 @@ public sealed class MapArtCopyTests
             Assert.DoesNotContain(System.Text.Json.JsonSerializer.Serialize(folder).Trim('"'), body);
         Assert.DoesNotContain("0_0.webp", body);
         Assert.Empty(Directory.EnumerateDirectories(c.H.DataDir, "map-assets.copying-*"));
+    }
+
+    /// <summary>Review of 0.1.4: the copy asks for no recent password now, and a copy that fails has written up to the
+    /// copy's 2 GB before it stops (then deletes it), so a failed copy is not started again at once: the next waits
+    /// <see cref="MapAssetsComponent.RetryAfterFailure"/> (429 with Retry-After), then copies.</summary>
+    [Fact]
+    public async Task A_failed_copy_is_not_started_again_at_once()
+    {
+        using var t = new TempDir();
+        var source = Launcher(t);
+        var time = new LaneC.ManualTime(DateTimeOffset.UtcNow);
+        await using var c = await LaneC.LaneC.StartAsync(extra: [new MapAssetsComponent(() => [source], time)]);
+        using var owner = await c.UserAsync("olive", BuiltinRoles.Owner);
+        const string copy = "/api/core/map-assets/copy";
+        async Task<string> Settled()
+        {
+            for (var i = 0; ; i++)
+            {
+                var s = (await LaneC.LaneC.JsonAsync(await owner.GetAsync("/api/core/map-assets-status")))!["copy"]!["state"]!.GetValue<string>();
+                if (s != "copying" || i > 200) return s;
+                await Task.Delay(25);
+            }
+        }
+        // the copy's state says failed a moment before the copy lets go of its lock ("being copied already")
+        async Task<HttpResponseMessage> Post()
+        {
+            for (var i = 0; ; i++)
+            {
+                var r = await owner.PostAsync(copy);
+                if (r.StatusCode != HttpStatusCode.Conflict || i > 100) return r;
+                await Task.Delay(20);
+            }
+        }
+        // a file the copy cannot read (another program holds it): the copy stops
+        using (new FileStream(Path.Combine(source, "map", "tiles", "0", "0_0.webp"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await owner.PostAsync(copy)).StatusCode);
+            Assert.Equal("failed", await Settled());
+        }
+        var r = await Post();
+        Assert.Equal(HttpStatusCode.TooManyRequests, r.StatusCode);
+        Assert.Equal("rate_limited", await LaneC.LaneC.CodeAsync(r));
+        var wait = int.Parse(r.Headers.GetValues("Retry-After").Single());
+        Assert.InRange(wait, 1, (int)MapAssetsComponent.RetryAfterFailure.TotalSeconds);
+        Assert.Equal("failed", await Settled());
+        Assert.Empty(Directory.EnumerateDirectories(c.H.DataDir, "map-assets.copying-*"));
+
+        time.Now += MapAssetsComponent.RetryAfterFailure - TimeSpan.FromSeconds(1);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await Post()).StatusCode);
+        time.Now += TimeSpan.FromSeconds(1);
+        Assert.Equal(HttpStatusCode.Accepted, (await Post()).StatusCode);
+        Assert.Equal("done", await Settled());
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PostAsync(copy)).StatusCode);
     }
 
     /// <summary>Review of 0.1.3: a copy cut short by a crash or a kill leaves its working folder (up to the copy's 2 GB)

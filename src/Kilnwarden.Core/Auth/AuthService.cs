@@ -365,6 +365,16 @@ public sealed class AuthService
         var role = r.Data is JsonObject d ? KapFrames.Str(d, "role") : null;
         var mintedBy = r.Data is JsonObject d2 ? KapFrames.Str(d2, "mintedBy") ?? "?" : "?";
         if (role != "owner") return new SignInResult.Refused(401, "invalid_login", "the login link is wrong, used or expired");
+        // Through the relay (the panel's hosted address) the launcher's login signs the owner in, as on this machine: only
+        // whoever holds Kiln.Admin's token mints one, it works once, for 60 s, and the relay never sees it (TLS ends here).
+        // Before the owner exists it would be a setup token, and those create the owner on this machine only (0.1.2):
+        // refused here, with the secret used up, instead of a setup page the relay then refuses.
+        if (!OwnerExists && c.Relayed && !RemoteSetupOn())
+        {
+            Audit.Record(AuditLog.Entry("auth.launcher", null, c.Ip, false, "no owner yet: the launcher's setup works on the server's own computer only"));
+            return new SignInResult.Refused(403, "launcher_setup_this_machine",
+                "there is no owner account yet: create it on the server's own computer first (Open web panel there), or run kilnwarden setup in the server console");
+        }
         if (!OwnerExists)
         {
             Audit.Record(AuditLog.Entry("auth.launcher", null, c.Ip, true, args: new JsonObject { ["mintedBy"] = mintedBy, ["result"] = "setup" }));

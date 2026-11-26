@@ -119,7 +119,16 @@ but does **not** grant recent proof. That session can step up with the primary o
 code from that owner's enrolled TOTP. The launcher secret is neither an account password nor a reauth credential;
 submitting `{ "secret": "..." }` to `/reauth` does not satisfy the contract, and reusing the redeemed launcher link
 fails. If the owner cannot supply an account credential, sensitive actions stay blocked: there is no launcher-secret
-fallback. Before an owner exists, the launcher grants a setup token instead of bypassing owner creation.
+fallback. Before an owner exists, the launcher grants a setup token instead of bypassing owner creation; like
+kiln.log's setup link it works on the server's own computer only (only the server console's hosted link is made for
+the relay), so through the relay the launcher's login is refused until the owner exists. With the owner, it works at the panel's hosted or own address too (0.1.4: launcher-endpoint.json
+`public`, written only while that address really works; the threat model is docs/protocol-relay-broker.md §7.1).
+The panel's check of that address runs again 5 minutes after it passes, then after 10, 20 and at most 30 minutes
+while it keeps passing; a failure or a change of the certificate, the relay link, the name or the listener starts it
+again at 5 (before 0.1.4 a passed check was not repeated on a schedule). So the worst case for an address that stops
+answering while everything else holds is about 30½ minutes before `public` goes; the launcher's own pinned check at
+every click covers that gap, so security does not depend on it. While there is no owner or launcherLogin is off, a
+passed check is not run again (a failed one still is, for the wizard) and the file names no public address.
 
 ## 4. UI: one codebase with the launcher
 - **In Kiln:** the launcher's admin pages (`launcher/src/admin/**`) are a package (`@kiln/admin-ui`) with a transport

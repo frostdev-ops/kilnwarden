@@ -1,7 +1,7 @@
 {
   "name": "kilnwarden-web",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "The web app of the Kilnwarden mod: the sign-in shell, the web-only pages and the launcher's admin pages (@kiln/admin-ui, vendored in vendor/admin-ui). Built into dist/, which the mod folder serves as web/.",
   "license": "MIT",
   "type": "module",

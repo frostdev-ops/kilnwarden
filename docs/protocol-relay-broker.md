@@ -296,12 +296,82 @@ Not a hosted-service protocol, but the launcher integration depends on it:
   `{"format":1,"host":"<address>","port":<port>,"sha256":"<certificate SHA-256 hex>"|null}`. `host` is the bind
   address, or loopback when the bind is all addresses. The file is deleted when the panel stops. `sha256` is null on
   plain HTTP.
+- Since 0.1.4 the same file can also hold the panel's address on the internet, still `format` 1 (a launcher that does
+  not know the two fields ignores them):
+  `"public":"https://<name>.<ZONE>/"` (hosted access) or `"https://<own name>[:<port>]/"` (an own address), and
+  `"publicSha256":"<SHA-256 of the trusted certificate served there>"`. Both are written only while that address
+  really works, which is what the setup wizard's "Ready" checks: the relay link is up, the name is this server's (not
+  unclaimed, moving or moved), the trusted certificate for the name is installed **and** is the one the listener serves,
+  and the panel's own check of `https://<address>/` (the name in DNS, through the relay for hosted access, the machine's
+  trust store, this panel's certificate, `GET /api/core/health` answering 200) passed for that certificate. An own
+  address needs the same checklist for its name. They are never written before the owner account exists, nor while
+  the launcher's login is switched off (auth.json `launcherLogin`). They go as soon as any of these stops: the relay
+  link drops, the name moves, hosted access is switched off, the certificate changes or stops being served, the
+  launcher's login is switched off, or the address check fails. A dropped relay link, a new listener and the owner's
+  creation update the file at once, the rest within one round of the panel's checks (15 seconds).
+- The address check runs again 5 minutes after it passes, then after 10, 20 and at most 30 minutes while each check
+  passes (10 seconds after a failure). Any failure, and any change of the certificate, the relay link (up or down),
+  the name or the listener, starts that again at 5 minutes. So an address that stops answering while everything else
+  holds goes within about 30½ minutes in the worst case (30 minutes, then the next 15-second round, and a check that
+  gets no answer gives up after 12 seconds). Before 0.1.4 a passed check was not repeated on a schedule (nothing used
+  it but the setup checklist, and no file named the address). The launcher checks the address itself at every click
+  (below), so that gap only costs a few seconds and a fallback to this machine, never a secret.
+  A pass counts for the file only until its recheck is a minute overdue, so even a check that never ends leaves the
+  address in the file for at most about 31¼ minutes (that minute, then the next round). While there is no owner or
+  the launcher's login is off, a passed check is not run again at all (nothing needs it: the file names no address
+  then). When that ends, the last pass names the address again if it still counts (its recheck is not yet a minute
+  overdue, as at any other time); after a longer pause the address comes back once a new check passes.
 - The launcher mints a single-use owner login with Kiln.Admin's KAP op `login_mint` (consumer `kilnwarden`) and
   opens `https://<host>:<port>/launcher#secret=<64 lower-case hex>`. The page posts the secret in a JSON body to
   `POST /api/auth/launcher`; the mod redeems it with `login_redeem` for `kilnwarden`, and once more for the old id
   `kiln-webadmin` when Kiln.Admin refuses the first (launchers made before the rename mint for that id).
+- With `public`, a launcher that knows it first checks the address in a few seconds: a TLS handshake that accepts only
+  the certificate `publicSha256` names, then `GET /api/auth/status` answering 200 with `ownerExists` and
+  `launcherLogin` true. If that passes it opens `<public>launcher#secret=<...>` instead; the same page and the same
+  redeem sign the owner in there, through the relay. If the field is missing, the address does not answer in time, or
+  it answers with another certificate or anything else, it opens the panel on this machine as before. "Open on this
+  computer instead" keeps that route one click away.
 - Kiln Launchers before Kiln 0.2.0-dev.31.14 look for the old id (`kiln-webadmin`) and its data folder, so "Open web
   panel" shows for Kilnwarden from Kiln 0.2.0-dev.31.14.
+
+### 7.1 The launcher's login at the public address: threat model (0.1.4)
+
+The secret signs in as the primary owner (two-factor counted as done, no recent proof). `POST /api/auth/launcher`
+has never looked at whether a request came through the relay; 0.1.4 keeps that and writes down why, and adds one
+refusal.
+
+- **Why setup links stay direct-only (0.1.2), and why this secret is different.** kiln.log's setup link sits in a log
+  file people paste into support threads, and it works until the owner exists; whoever reads it could create the owner
+  from anywhere. So it works on the server's own computer only (`setup_link_this_machine`). The launcher's secret is
+  minted on demand by Kiln.Admin (`login_mint`) for a KAP client holding the admin token, which only someone who can
+  already read the server's files has (and that is full control of the server anyway). It is 256 random bits, works
+  once (Kiln.Admin checks and forgets it in constant time), lives 60 seconds, is bound to this mod's id (or its old
+  one, `kiln-webadmin`, for launchers made before the rename: §7), and neither the launcher nor the mod writes it to a
+  log, a command line or a file: the launcher hands the browser a one-use local page that moves it on with
+  `location.replace`, the secret stays in the URL fragment (never sent in a request line or Referer), and the panel's
+  page removes it from the address bar before posting it in a JSON body. A browser's history may still keep the
+  address it opened, with the secret, which is used up by then (and any unused one dies after its 60 seconds).
+- **The relay.** It forwards bytes by SNI and never holds the panel's key: TLS ends at the panel, so the relay sees no
+  secret. What remains is section 8's: the relay's operator controls the zone's DNS and could get a certificate for
+  the name and intercept the browser. The launcher's check pins the panel's own certificate (`publicSha256`) but the
+  browser makes its own connection, so an operator who intercepts selectively could take one secret and redeem it
+  within its 60 seconds. That gives an owner session without recent proof (Users & Roles, settings and the other
+  sensitive actions still need the owner's password or code). It is less than what the owner's password typed at the
+  same address already gives such an operator (a reusable credential that does grant recent proof), so it is the trust
+  hosted access already asks for, not a new one. An owner who doesn't want it uses "Open on this computer instead".
+- **The name pointing elsewhere.** A name that moved to another server's key, was released, or a DNS answer that
+  goes somewhere else: the mod takes `public` out as soon as the relay says the name is not this server's, and the
+  launcher's check refuses any certificate but this panel's, so the secret is not sent there. A secret sent anyway is
+  only redeemable at this panel, once, for 60 seconds.
+- **A stale file.** `public` can lag a real change (above); the launcher's own check (pinned, a few seconds) covers
+  that gap, and anything but a clean answer falls back to this machine.
+- **Guessing and replay.** 256 bits, one use, the sign-in budget per browser address (the relay reports it honestly,
+  section 3), and a refused or used secret answers like a wrong one (`401 invalid_login`).
+- **Before the owner exists** the launcher's login would be a setup token, which works on the server's own computer
+  only. Through the relay it is now refused at once (`403 launcher_setup_this_machine`, the secret used up) instead of
+  leading to a setup page the relay then refuses; on this machine nothing changed. The file names no public address
+  before the owner exists either. settings.json `remoteSetup` (the old switch that lets this machine's setup links
+  work through the relay) still applies.
 
 ## 8. Trust, in short
 
@@ -319,5 +389,6 @@ Not a hosted-service protocol, but the launcher integration depends on it:
 
 | Mod version | Change |
 |---|---|
+| 0.1.4 | `launcher-endpoint.json` names the panel's working public address and its certificate (`public`, `publicSha256`, §7); the launcher's login through the relay before the owner exists is refused (`launcher_setup_this_machine`, §7.1). No relay or broker change. |
 | 0.1.1 | Claim links on the claim pages' own origin, `https://claim.<ZONE>/claim?...` (§1.1). The control link asks for notices (`X-Kwa-Notices: 1`) and takes the name notice (§3.1), ignoring notices it does not know; the `move-undo` request (§2, §3.1); the `403` with `X-Kwa-Moving-At` for a key a name moves to. |
 | 0.1.0 | First version: relay `kwa-relay/1` (control, data, dns-add, dns-remove, and claim links, §1.1), broker `v=1`, the launcher handoff. Panel names are `<name>.kiln.nexus`; the relay's API (`ORIGIN`) and the broker are on `https://frostdev.io`. The broker refuses a `return` URL on frostdev.io or its subdomains, at the apex `kiln.nexus`, at a reserved name or deeper than one label under it. |

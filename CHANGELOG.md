@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.4 (2026-11-26)
+
+The Kiln Launcher's **Open web panel** opens your hosted address once it works, and dialogs over the Map page take your
+clicks again.
+
+### The Kiln Launcher
+- **Open web panel opens your panel at its hosted address** (`https://<name>.kiln.nexus`, or your own web address),
+  signed in, once that address really works: the relay connected, the name yours, its certificate in place, your owner
+  account created, and the panel's own check of the address passing. Until then, and as soon as any of that stops, the
+  launcher opens the panel on your computer, as before; it also checks the address itself before every open. This
+  needs Kiln 0.2.0-dev.31.19 or later; older launchers keep opening the panel on your computer.
+- The launcher's one-time sign-in is the same at that address: it works once, for one minute. Before your owner account
+  exists it is refused at the hosted address, in plain words: create the owner on the server's own computer first
+  (setup links only work there). docs/protocol-relay-broker.md §7.1 explains why this is safe.
+- The panel keeps checking its hosted address while it works (0.1.3 stopped at the first check that passed): 5 minutes
+  after a check passes, then after 10, 20 and at most 30 minutes, about 50 checks a day through the relay. Any failure,
+  or a change of the certificate, the relay link, the name or the listener, starts again at 5 minutes. So the setup
+  checklist's **Ready** (the wizard, `kilnwarden status`) now also shows when a working address stops answering. Such
+  an address may stay on offer to the launcher for up to about half an hour, but the launcher checks it at every click
+  and otherwise opens the panel on your computer.
+- With no owner account yet, or with the launcher's sign-in switched off (`launcherLogin` in auth.json), the panel
+  offers the launcher no address, and a check that passed isn't repeated (one that failed still is, every 10 seconds).
+
+### The Map page
+- **Dialogs over the map take your clicks.** Where a dialog lay over the map (the identity prompt, the map's own
+  confirmations such as **Delete waypoint?**), the map's layers sat above it and took every click, so the dialog could
+  not be used. The account menu, and the page menu on a phone, had the same problem over the map. Every dialog and
+  menu now sits above the map, and above whatever any page shows.
+- **Copy it from the Kiln Launcher** no longer asks for your password again: one click copies the map art. It is still
+  for the server's owner only, and as before it reads only the launcher's own folder, copies only the map's files
+  within the size limits, never follows a link, and moves the art in only once the copy is complete. After a copy that
+  fails, the next can start half a minute later.
+
 ## 0.1.3 (2026-11-26)
 
 The setup wizard, polished: Discord sign-in for you, then mods and your dashboard. The Map page fills the screen and
