@@ -1,10 +1,15 @@
-// The setup wizard (0.1.2), every page and its error states, on a server of its own (playwright.config.ts: HTTPS,
+// The setup wizard (0.1.2; 0.1.3: Discord sign-in for the owner, then for helpers, mods, the dashboard, the end's list),
+// every page and its error states, on a server of its own (playwright.config.ts: HTTPS,
 // a relay and a CA address that never answer, so nothing leaves this PC; the claim pages are a stand-in). The account
 // and the settings the wizard writes are real; what only a real relay and Let's Encrypt can do (the claim noticed,
 // the certificate, the address check) is the server's answer given by the test here, and runs for real in
-// the relay's own end-to-end tests. Screenshots of every page at 1280x800 and 390x844 go to KWA_WIZARD_SCREENS, with the
-// words each page shows (words.json).
+// the relay's own end-to-end tests. So are the Discord broker's answers (a build without the broker's keys offers no
+// Discord pages: the test says it has them; the real link runs in the relay's own end-to-end tests) and
+// Kiln.Admin's staging of a checked mod (the mock does not stage). Screenshots of every page at 1280x800 and 390x844 go to
+// KWA_WIZARD_SCREENS, with the words each page shows (words.json; the dashboard's live preview and screen-reader-only
+// text are not counted).
 import { test, expect, type Browser, type BrowserContext, type Page, type Route } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -44,7 +49,15 @@ async function shot(page: Page, name: string) {
   const card = page.locator('main.wa-wizard');
   await expect(card).toBeVisible();
   await page.waitForTimeout(250);
-  const text = await card.innerText();
+  // the words the page says: not the dashboard's live preview (the owner's own cards) nor screen-reader-only text
+  const text = await card.evaluate((el) => {
+    const skip = [...el.querySelectorAll<HTMLElement>('[data-words="skip"], .k-sr-only')];
+    const was = skip.map((x) => x.style.display);
+    skip.forEach((x) => { x.style.display = 'none'; });
+    const t = (el as HTMLElement).innerText;
+    skip.forEach((x, i) => { x.style.display = was[i]; });
+    return t;
+  });
   words[name] = text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   await page.screenshot({ path: resolve(SHOTS, `${name}.png`), animations: 'disabled' });
 }
@@ -66,11 +79,26 @@ async function stubState(page: Page, change: (s: any) => any) {
 
 const steps = (...s: [string, string, any?][]) => s.map(([id, state, extra]) => ({ id, state, note: null, problem: null, ...extra }));
 
-function hosted(s: any, list: any[]) {
+function hosted(s: any, list: any[], discord: any = {}) {
   s.hosted = { host: 'embervale.kiln.nexus', name: 'embervale', url: 'https://embervale.kiln.nexus/', steps: list, ready: list.every((x) => x.state === 'done') };
-  s.discord = { enabled: false, guildId: '', available: true };
+  s.discord = { enabled: false, guildId: '', available: true, ownerOnly: false, kilnGuild: false, linked: false, ...discord };
   return s;
 }
+
+const READY = () => steps(['connected', 'done'], ['claimed', 'done'], ['secure', 'done'], ['ready', 'done']);
+
+/** A zip made for the test: a mod (kiln.mod.json at its top) or not. */
+function zip(name: string, files: Record<string, string>): string {
+  const out = resolve('test-results', name);
+  mkdirSync(resolve('test-results'), { recursive: true });
+  execFileSync(process.env.KWA_PYTHON ?? 'python3', ['-I', '-c', 'import json,sys,zipfile\nz=zipfile.ZipFile(sys.argv[1],"w")\nfor k,v in json.loads(sys.argv[2]).items(): z.writestr(k,v)\nz.close()', out, JSON.stringify(files)]);
+  return out;
+}
+
+const api = (page: Page, path: string, method: string, body?: unknown) => page.evaluate(async ({ path, method, body }) => {
+  const r = await fetch(path, { method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  return { status: r.status, data: await r.json().catch(() => null) };
+}, { path, method, body });
 
 function token(): string {
   const log = readFileSync(resolve(dir, 'devhost.log'), 'utf8');
@@ -213,30 +241,153 @@ test('hosted access: the choice, the name, the claim with Discord, the checklist
   await shot(page, 'desktop-09-ready');
   await page.getByRole('button', { name: 'Next' }).click();
 
-  // Discord sign-in for helpers: optional, skippable; the server ID checked
-  await expect(page.getByRole('heading', { name: 'Let helpers sign in with Discord?' })).toBeVisible();
+  // Sign in with Discord, for you first (0.1.3): one button; the broker not answering, said plainly, nothing changed
+  await expect(page.getByRole('heading', { name: 'Sign in with Discord' })).toBeVisible();
+  await expect(page.locator('main.wa-wizard')).toHaveAttribute('data-step', 'discord');
   await shot(page, 'desktop-10-discord');
+  await page.route('**/api/setup/discord/me', (r) => r.fulfill({ status: 503, json: { error: { code: 'broker_unreachable', message: 'https://frostdev.io/kiln/auth/discord/health did not answer within 8 seconds' } } }));
+  await page.getByRole('button', { name: 'Link my Discord' }).click();
+  await expect(page.getByText("Discord sign-in isn't answering right now. Your password still works.")).toBeVisible();
+  await expect(page.getByText('did not answer within 8 seconds')).toBeHidden();
+  await shot(page, 'desktop-10b-discord-unreachable');
+  await page.getByText('Details', { exact: true }).click();
+  await expect(page.getByText('did not answer within 8 seconds')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try Discord anyway' })).toBeVisible();
+  await page.screenshot({ path: resolve(SHOTS, 'desktop-10b2-discord-unreachable-details.png') });
+  expect(data('identity.json').discord?.enabled ?? false).toBe(false);
+  // to Discord and back (the broker and Discord are stand-ins here: the answer comes back to /setup#ext=, as the
+  // panel's callback sends it); first a cancel on Discord, then a Discord account linked to someone else, then linked
+  await page.unroute('**/api/setup/discord/me');
+  await page.route('**/api/setup/discord/me', (r) => r.fulfill({ json: { ok: true, guildId: '1568454645683195976', ownerOnly: true } }));
+  let started: any = null;
+  await page.route('**/api/identity/start', async (r) => { started = r.request().postDataJSON(); await r.fulfill({ json: { url: `${BASE}/api/identity/discord/callback?state=stand-in` } }); });
+  await page.route('**/api/identity/discord/callback?state=stand-in', (r) => r.fulfill({ status: 303, headers: { location: `/setup#ext=${'E'.repeat(43)}` } }));
+  let answer: { status: number; json: any } = { status: 400, json: { error: { code: 'ext_canceled', message: 'the sign-in was canceled' } } };
+  await page.route('**/api/identity/complete', (r) => r.fulfill(answer));
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByText('You canceled on Discord. Nothing changed.')).toBeVisible();
+  expect(started).toEqual({ provider: 'discord', intent: 'link', back: 'setup' });
+  expect(new URL(page.url()).hash).toBe(''); // the answer is taken from the address at once
+  await shot(page, 'desktop-10c-discord-canceled');
+  answer = { status: 409, json: { error: { code: 'linked_elsewhere', message: 'that discord account is linked to another panel account' } } };
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByText('That Discord account is already linked to another account here.')).toBeVisible();
+  await shot(page, 'desktop-10d-discord-linked-elsewhere');
+  answer = { status: 200, json: { ok: true, linked: { provider: 'discord', subject: '123456789012345678' } } };
+  await stubState(page, (s) => hosted(s, READY(), { enabled: true, ownerOnly: true, kilnGuild: true, guildId: '1568454645683195976', linked: true }));
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('heading', { name: 'Your Discord is linked' })).toBeVisible();
+  await shot(page, 'desktop-10e-discord-linked');
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  // others too (optional): their Discord server's ID, checked as it is typed
+  await expect(page.getByRole('heading', { name: 'Let others sign in with Discord too?' })).toBeVisible();
+  await shot(page, 'desktop-11-helpers');
   await page.getByRole('button', { name: 'Set it up' }).click();
   const guild = page.getByLabel("Your Discord server's ID", { exact: true });
   await guild.fill('12ab');
   await expect(guild).toHaveValue('12');
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
-  await shot(page, 'desktop-10b-discord-form');
+  await shot(page, 'desktop-11b-helpers-form');
   await guild.fill('1568454645683195976');
+  expect((await api(page, '/api/auth/reauth', 'POST', { password })).status).toBe(200);
+  // what the server says once it is saved (the owner's link stays the stand-in's)
+  await stubState(page, (s) => hosted(s, READY(), { enabled: s.discord?.enabled, ownerOnly: s.discord?.ownerOnly, kilnGuild: true, guildId: s.discord?.guildId, linked: true }));
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('heading', { name: "You're all set" })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Add mods to your server' })).toBeVisible();
   const identity = data('identity.json');
-  expect([identity.discord.enabled, identity.discord.guildId]).toEqual([true, '1568454645683195976']);
-  await expect(page.getByText('https://embervale.kiln.nexus/')).toBeVisible();
+  expect([identity.discord.enabled, identity.discord.guildId, identity.discord.ownerOnly]).toEqual([true, '1568454645683195976', false]);
+
+  // mods: what is installed, a zip that is not a mod (refused, with the reason), a mod (checked, then staged)
+  await expect(page.locator('main.wa-wizard .wa-lead')).toHaveText(/^(Installed: \d+ mods?\.|No mods installed yet\.)$/);
+  await expect(page.getByRole('link', { name: 'Nexus Mods' })).toHaveAttribute('href', 'https://www.nexusmods.com/enshrouded/mods/');
+  await shot(page, 'desktop-12-mods');
+  await page.getByLabel('Mod zip', { exact: true }).setInputFiles(zip('not-a-mod.zip', { 'readme.txt': 'just a note' }));
+  await page.getByRole('button', { name: 'Check it' }).click();
+  await expect(page.getByText('Not added.')).toBeVisible();
+  await expect(page.locator('.k-banner', { hasText: 'Not added.' })).toContainText(/kiln\.mod\.json/);
+  await shot(page, 'desktop-12b-mods-refused');
+  await page.getByRole('tab', { name: 'Paste a link' }).click();
+  await page.getByLabel('Link', { exact: true }).fill('https://example.com/mod.zip');
+  await page.getByLabel('Its SHA-256', { exact: true }).fill('a'.repeat(64));
+  await page.getByRole('button', { name: 'Check it' }).click();
+  await expect(page.locator('.k-banner', { hasText: 'Not added.' })).toContainText(/allowed/i); // no allowed source yet: refused before any download
+  await page.getByRole('tab', { name: 'Upload a zip' }).click();
+  await page.getByLabel('Mod zip', { exact: true }).setInputFiles(zip('auto-loot.zip', { 'kiln.mod.json': JSON.stringify({ id: 'kiln-auto-loot', name: 'Auto Loot', version: '0.2.11' }), 'AutoLoot.dll': 'MZ stand-in' }));
+  await page.getByRole('button', { name: 'Check it' }).click();
+  await expect(page.getByText('Auto Loot 0.2.11')).toBeVisible();
+  await expect(page.locator('.wa-plan-line').getByText('not signed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Install at the next restart' })).toBeDisabled();
+  await shot(page, 'desktop-12c-mods-checked');
+  await page.getByText('I trust where this file came from').click();
+  await page.route('**/api/updates/plans/*/stage', (r) => r.fulfill({ json: { unit: 'mod.kiln-auto-loot' } }));
+  await page.getByRole('button', { name: 'Install at the next restart' }).click();
+  await expect(page.getByText('Auto Loot 0.2.11: installs at the next restart.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Restart now' })).toHaveCount(0); // this server's restarts are not supported
+  await shot(page, 'desktop-12d-mods-staged');
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  // the dashboard: a live preview of the overview's cards, moved with the keyboard here, one switched off
+  await expect(page.getByRole('heading', { name: 'Customize your dashboard' })).toBeVisible();
+  await expect(page.locator('.wa-preview').first()).toBeVisible();
+  await shot(page, 'desktop-13-dashboard');
+  await page.getByRole('button', { name: 'Move Quick links', exact: true }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await expect(page.locator('[aria-live="assertive"]')).toContainText('Quick links dropped at position 1');
+  // the switch by the keyboard too (a click on its track works the same)
+  await page.getByRole('switch', { name: 'Show Panel' }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('switch', { name: 'Show Panel' })).not.toBeChecked();
+  await shot(page, 'desktop-13b-dashboard-changed');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // the end: the address, and what was set up and what was skipped, each with where it changes
+  await expect(page.getByRole('heading', { name: "You're all set" })).toBeVisible();
+  for (const [row, done] of [['address', true], ['discord', true], ['helpers', true], ['mods', true], ['dashboard', true]] as const)
+    await expect(page.locator(`.wa-done-list [data-row="${row}"]`)).toHaveClass(done ? /done/ : /skipped/);
   await expect(page.getByRole('link', { name: 'Open your panel' })).toHaveAttribute('href', 'https://embervale.kiln.nexus/');
-  await shot(page, 'desktop-11-done');
+  await expect(page.getByRole('button', { name: 'Discord sign-in: change it in My account' })).toBeVisible();
+  await shot(page, 'desktop-14-done');
   await page.unroute('**/api/setup/state');
-  await page.getByRole('button', { name: 'Stay on this address' }).click();
+  await page.getByRole('button', { name: 'Stay here' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Kilnwarden', exact: true })).toBeVisible();
   expect(data('setup.json').done).toBe(true);
+  // the layout made in the wizard is the overview's
+  await expect(page.locator('.wa-dash > [data-card]').first()).toHaveAttribute('data-card', 'panel/links');
+  await expect(page.locator('.wa-dash > [data-card="panel/info"]')).toHaveCount(0);
   // the overview stays the overview once it is done
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Kilnwarden', exact: true })).toBeVisible();
+  await ctx.close();
+});
+
+test('Back walks every page back, Skip moves on, and a reload comes back to the same page', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, DESKTOP, true);
+  await page.goto('/settings');
+  await page.evaluate(() => sessionStorage.setItem('wa-setup-name', 'embervale'));
+  await api(page, '/api/setup/progress', 'PUT', { route: 'hosted', step: 'done' });
+  await stubState(page, (s) => { const x = hosted(s, READY()); x.done = false; x.route = 'hosted'; return x; });
+  await page.goto('/setup');
+  const at = page.locator('main.wa-wizard');
+  await expect(at).toHaveAttribute('data-step', 'done');
+  for (const step of ['dashboard', 'mods', 'helpers', 'discord', 'progress']) {
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(at).toHaveAttribute('data-step', step);
+  }
+  // the dots count this route's pages, the page itself lit
+  await expect(page.locator('.wa-dots')).toHaveAttribute('aria-label', 'Step 6 of 11');
+  for (const step of ['discord', 'helpers', 'mods', 'dashboard']) {
+    if (step === 'discord') { await page.getByRole('button', { name: 'Next' }).click(); await expect(at).toHaveAttribute('data-step', 'discord'); continue; }
+    await page.getByRole('button', { name: 'Skip', exact: true }).click();
+    await expect(at).toHaveAttribute('data-step', step);
+    // a reload (or a restart) comes back here
+    await page.reload();
+    await expect(at).toHaveAttribute('data-step', step);
+  }
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await expect(at).toHaveAttribute('data-step', 'done');
   await ctx.close();
 });
 
@@ -249,22 +400,32 @@ test('the Kiln Launcher and an own address, from Panel settings > Run the setup 
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('heading', { name: 'Use the Kiln Launcher' })).toBeVisible();
   await expect(page.getByText('Open web panel')).toBeVisible();
-  await shot(page, 'desktop-12-launcher');
+  await shot(page, 'desktop-15b-launcher');
   await page.getByRole('button', { name: 'Next' }).click();
-  // a build without the broker's keys (this one): the Discord page has nothing to offer and is passed
+  // a build without the broker's keys (this one): no Discord pages; mods and the dashboard skipped
+  await expect(page.getByRole('heading', { name: 'Add mods to your server' })).toBeVisible();
+  await expect(page.locator('.wa-dots')).toHaveAttribute('aria-label', 'Step 5 of 7');
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect(page.getByRole('heading', { name: "You're all set" })).toBeVisible();
-  await shot(page, 'desktop-13-done-launcher');
+  await expect(page.getByText('Open it with the Kiln Launcher.')).toBeVisible();
+  await expect(page.locator('.wa-done-list [data-row="discord"]')).toHaveCount(0);
+  await expect(page.locator('.wa-done-list [data-row="mods"]')).toHaveClass(/skipped/);
+  // the launcher route has nothing more to set up for its address: done, whatever route was saved before this run
+  await expect(page.locator('.wa-done-list [data-row="address"]')).toHaveClass(/done/);
+  await shot(page, 'desktop-15-done-launcher');
 
+  await page.goto('/settings');
   await page.getByRole('button', { name: 'Run the setup again' }).click();
   await page.getByRole('radio', { name: /At my own web address/ }).check();
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('heading', { name: 'Your own address' })).toBeVisible();
-  await shot(page, 'desktop-14-own');
+  await shot(page, 'desktop-16-own');
   // the server checks the address (a real refusal: nothing is changed)
   await page.getByLabel('Web address', { exact: true }).fill('https://nope');
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByText('Type a web address such as panel.example.com (no https://, no port).')).toBeVisible();
-  await shot(page, 'desktop-15-own-error');
+  await shot(page, 'desktop-16b-own-error');
   expect(data('settings.json').bind).toBe('127.0.0.1');
   // a good one: saving it would open this test PC's port to the network, so the server's answer is given here
   await page.route('**/api/setup/own', (r) => r.fulfill({ json: { ok: true } }));
@@ -278,10 +439,10 @@ test('the Kiln Launcher and an own address, from Panel settings > Run the setup 
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('heading', { name: 'Getting your panel ready' })).toBeVisible();
   await expect(page.getByText("This server can't reach panel.example.com:443.").first()).toBeVisible();
-  await shot(page, 'desktop-16-own-progress-failed');
+  await shot(page, 'desktop-17-own-progress-failed');
   await stubState(page, own(steps(['found', 'done'], ['reachable', 'done'], ['secure', 'done'], ['ready', 'done'])));
   await expect(page.getByRole('heading', { name: 'Your panel is ready' })).toBeVisible();
-  await shot(page, 'desktop-17-own-ready');
+  await shot(page, 'desktop-18-own-ready');
   await ctx.close();
 });
 
@@ -333,10 +494,14 @@ test('every page at phone width', async ({ browser }) => {
     ['hosted', 'progress', 'phone-07-progress', (s) => hosted(s, steps(['connected', 'done'], ['claimed', 'done'], ['secure', 'working'], ['ready', 'waiting']))],
     ['hosted', 'progress', 'phone-08-progress-failed', (s) => hosted(s, steps(['connected', 'failed', { problem: { title: "This server can't reach frostdev.io.", fix: 'Your host may block outgoing connections. Ask them to allow outgoing HTTPS (port 443) to frostdev.io.', detail: 'x' } }], ['claimed', 'waiting'], ['secure', 'waiting'], ['ready', 'waiting']))],
     ['hosted', 'progress', 'phone-09-ready', (s) => hosted(s, steps(['connected', 'done'], ['claimed', 'done'], ['secure', 'done'], ['ready', 'done']))],
-    ['hosted', 'discord', 'phone-10-discord', (s) => hosted(s, steps(['connected', 'done'], ['claimed', 'done'], ['secure', 'done'], ['ready', 'done']))],
-    ['launcher', 'launcher', 'phone-12-launcher'],
-    ['own', 'own', 'phone-14-own'],
-    ['hosted', 'done', 'phone-11-done', (s) => hosted(s, steps(['connected', 'done'], ['claimed', 'done'], ['secure', 'done'], ['ready', 'done']))],
+    ['hosted', 'discord', 'phone-10-discord', (s) => hosted(s, READY())],
+    ['hosted', 'discord', 'phone-10e-discord-linked', (s) => hosted(s, READY(), { enabled: true, ownerOnly: true, kilnGuild: true, linked: true })],
+    ['hosted', 'helpers', 'phone-11-helpers', (s) => hosted(s, READY(), { enabled: true, ownerOnly: true, kilnGuild: true, linked: true })],
+    ['hosted', 'mods', 'phone-12-mods', (s) => hosted(s, READY())],
+    ['hosted', 'dashboard', 'phone-13-dashboard', (s) => hosted(s, READY())],
+    ['hosted', 'done', 'phone-14-done', (s) => hosted(s, READY(), { linked: true })],
+    ['launcher', 'launcher', 'phone-15b-launcher'],
+    ['own', 'own', 'phone-16-own'],
   ];
   await page.goto('/settings');
   for (const [route, step, file, change] of pages) {

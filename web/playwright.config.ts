@@ -14,6 +14,8 @@ export default defineConfig({
     command: 'bun e2e/host.ts', url: `http://127.0.0.1:${process.env.KWA_E2E_PORT}/api/auth/status`,
     reuseExistingServer: false, timeout: 60_000,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
+    // 0.1.3: a stand-in for the Kiln Launcher's map art folder on this computer (map.spec.ts makes it, or not)
+    env: { ...(process.env as Record<string, string>), KWA_E2E_DEVHOST_ARGS: `--launcher-assets ${resolve(process.env.KWA_E2E_DIR!, 'launcher-admin-assets')}` },
   }, {
     command: 'bun e2e/host.ts', url: `https://127.0.0.1:${process.env.KWA_E2E_WIZARD_PORT}/api/auth/status`, ignoreHTTPSErrors: true,
     reuseExistingServer: false, timeout: 60_000,

@@ -1,26 +1,49 @@
-// The setup wizard's logic (src/setup/wizard.ts): each route's pages, where a restart comes back to, the panel name's
-// rules (the same sentences as the server's PanelNames), and the checklist's plain words.
+// The setup wizard's logic (src/setup/wizard.ts): each route's pages, where a restart comes back to, Back and Next,
+// the panel name's rules (the same sentences as the server's PanelNames), the checklist's plain words, the Discord
+// link's answers in plain words and the end page's list (0.1.3).
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  RESERVED, allDone, checkLabel, firstProblem, nameProblem, normalizeName, pagesOf, position, reasonText, resumeAt, suggestName, type SetupStep,
+  RESERVED, allDone, checkLabel, discordProblem, doneRows, firstProblem, nameProblem, nextPage, normalizeName, pagesOf, position, prevPage,
+  reasonText, resumeAt, suggestName, type SetupStep, type StepId,
 } from "../src/setup/wizard";
 
 const step = (id: string, state: SetupStep["state"], note: string | null = null, problem: SetupStep["problem"] = null): SetupStep => ({ id, state, note, problem });
+const TAIL: StepId[] = ["discord", "helpers", "mods", "dashboard", "done"];
 
 describe("the pages of each route", () => {
-  test("hosted, launcher and own address", () => {
-    expect(pagesOf("hosted")).toEqual(["welcome", "owner", "route", "name", "claim", "progress", "discord", "done"]);
-    expect(pagesOf("launcher")).toEqual(["welcome", "owner", "route", "launcher", "discord", "done"]);
-    expect(pagesOf("own")).toEqual(["welcome", "owner", "route", "own", "own-progress", "discord", "done"]);
+  test("hosted, launcher and own address: Discord (you, then helpers), mods and the dashboard before the end", () => {
+    expect(pagesOf("hosted")).toEqual(["welcome", "owner", "route", "name", "claim", "progress", ...TAIL]);
+    expect(pagesOf("launcher")).toEqual(["welcome", "owner", "route", "launcher", ...TAIL]);
+    expect(pagesOf("own")).toEqual(["welcome", "owner", "route", "own", "own-progress", ...TAIL]);
     expect(pagesOf("")).toEqual(["welcome", "owner", "route", "done"]);
   });
-  test("the dots say where the page is", () => {
-    expect(position("hosted", "welcome")).toEqual({ at: 1, of: 8 });
-    expect(position("hosted", "claim")).toEqual({ at: 5, of: 8 });
-    expect(position("launcher", "done")).toEqual({ at: 6, of: 6 });
-    expect(position("", "route")).toEqual({ at: 3, of: 8 }); // before a choice: counted as the default route
+  test("a build without Discord sign-in has no Discord pages", () => {
+    expect(pagesOf("launcher", { discord: false })).toEqual(["welcome", "owner", "route", "launcher", "mods", "dashboard", "done"]);
+  });
+  test("the dots say where the page is, and count the pages there are", () => {
+    expect(position("hosted", "welcome")).toEqual({ at: 1, of: 11 });
+    expect(position("hosted", "claim")).toEqual({ at: 5, of: 11 });
+    expect(position("hosted", "mods")).toEqual({ at: 9, of: 11 });
+    expect(position("launcher", "done")).toEqual({ at: 9, of: 9 });
+    expect(position("launcher", "done", { discord: false })).toEqual({ at: 7, of: 7 });
+    expect(position("", "route")).toEqual({ at: 3, of: 11 }); // before a choice: counted as the default route
+  });
+  test("Back and Next walk the same list (no page sends you round in circles)", () => {
+    expect(nextPage("hosted", "progress")).toBe("discord");
+    expect(nextPage("hosted", "discord")).toBe("helpers");
+    expect(nextPage("own", "helpers")).toBe("mods");
+    expect(nextPage("launcher", "dashboard")).toBe("done");
+    expect(prevPage("hosted", "discord")).toBe("progress");
+    expect(prevPage("own", "discord")).toBe("own-progress");
+    expect(prevPage("launcher", "discord")).toBe("launcher");
+    expect(prevPage("launcher", "mods", { discord: false })).toBe("launcher");
+    expect(prevPage("hosted", "done")).toBe("dashboard");
+    expect(prevPage("", "done")).toBe("route");
+    expect(prevPage("hosted", "route")).toBeNull(); // the account exists: nothing before the choice
+    for (const r of ["hosted", "own", "launcher"] as const)
+      for (const p of pagesOf(r).slice(3)) expect(nextPage(r, prevPage(r, p)!)).toBe(p);
   });
 });
 
@@ -31,20 +54,56 @@ describe("coming back after a restart", () => {
   test("the saved page of the saved route", () => {
     expect(resumeAt({ ...base, route: "hosted", step: "claim" })).toBe("claim");
     expect(resumeAt({ ...base, route: "own", step: "own-progress" })).toBe("own-progress");
+    for (const p of ["discord", "helpers", "mods", "dashboard"] as StepId[]) expect(resumeAt({ ...base, route: "launcher", step: p })).toBe(p);
+  });
+  test("a Discord page in a build without Discord sign-in: the next page there is", () => {
+    expect(resumeAt({ ...base, route: "launcher", step: "helpers", discord: { enabled: false, guildId: "", available: false } })).toBe("mods");
   });
   test("a page that is not the route's, or the account, goes back to the choice", () => {
     expect(resumeAt({ ...base, route: "launcher", step: "claim" })).toBe("route");
     expect(resumeAt({ ...base, route: "hosted", step: "owner" })).toBe("route");
     expect(resumeAt({ ...base, route: "hosted", step: "nonsense" })).toBe("route");
   });
-  test("set up from the server console: only the optional page and the end are left", () => {
+  test("set up from the server console: only the optional pages and the end are left", () => {
     expect(resumeAt({ ...base, hosted: { host: "a.kiln.nexus", name: "a", ready: true } })).toBe("discord");
     expect(resumeAt({ ...base, route: "hosted", hosted: { host: "a.kiln.nexus", name: "a", ready: true } })).toBe("discord");
+    expect(resumeAt({ ...base, step: "mods", hosted: { host: "a.kiln.nexus", name: "a", ready: true } })).toBe("mods");
     expect(resumeAt({ ...base, route: "hosted", step: "progress", hosted: { host: "a.kiln.nexus", name: "a", ready: true } })).toBe("progress");
     const steps = [{ id: "ready", state: "working" as const, note: null, problem: null }];
     expect(resumeAt({ ...base, route: "hosted", client: { thisMachine: false, hosted: true }, hosted: { host: "a.kiln.nexus", name: "a", ready: false, steps } })).toBe("progress");
     expect(resumeAt({ ...base, route: "hosted", client: { thisMachine: true, hosted: false }, hosted: { host: "a.kiln.nexus", name: "a", ready: false, steps } })).toBe("route");
     expect(resumeAt({ ...base, route: "hosted", step: "done", hosted: { host: "a.kiln.nexus", name: "a", ready: true } })).toBe("done");
+  });
+});
+
+describe("Discord sign-in for the owner, in plain words", () => {
+  test("each answer of the link says what happened and what to do", () => {
+    expect(discordProblem("ext_canceled")).toBe("You canceled on Discord. Nothing changed.");
+    expect(discordProblem("linked_elsewhere")).toContain("already linked to another account here");
+    expect(discordProblem("not_member", true)).toContain("Kiln Discord");
+    expect(discordProblem("not_member", false)).toContain("your Discord server");
+    expect(discordProblem("broker_unreachable")).toContain("Your password still works");
+    expect(discordProblem("ext_expired")).toContain("Try again");
+    expect(discordProblem("reauth_required")).toContain("Confirm it's you");
+    expect(discordProblem("something_else")).toContain("Try again");
+  });
+  test("no technical words", () => {
+    for (const c of ["ext_canceled", "linked_elsewhere", "not_member", "broker_unreachable", "ext_expired", "ext_failed", "owner_only"])
+      expect(discordProblem(c, true)).not.toMatch(/broker|assertion|nonce|state|token|guild|oauth/i);
+  });
+});
+
+describe("the end page", () => {
+  const base = { done: false, route: "hosted" as const, step: "done", suggested: "hosted" as const, reason: "default" as const, client: { thisMachine: true, hosted: false }, zone: "kiln.nexus", address: null, launcher: "x" };
+  test("what was set up and what was skipped, each with where to change it", () => {
+    const rows = doneRows({ ...base, hosted: { host: "a.kiln.nexus", name: "a", ready: true }, discord: { enabled: true, guildId: "1568454645683195976", available: true, ownerOnly: true, linked: true } }, { mods: 0, customized: true });
+    expect(rows.map((r) => [r.id, r.done, r.where])).toEqual([
+      ["address", true, "Panel settings"], ["discord", true, "My account"], ["helpers", false, "Panel settings"], ["mods", false, "Mods"], ["dashboard", true, "Overview"],
+    ]);
+  });
+  test("skipping the route, and a build without Discord sign-in", () => {
+    const rows = doneRows({ ...base, route: "", discord: { enabled: false, guildId: "", available: false } }, { mods: 2, customized: false });
+    expect(rows.map((r) => [r.id, r.done])).toEqual([["address", false], ["mods", true], ["dashboard", false]]);
   });
 });
 

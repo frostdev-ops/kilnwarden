@@ -1,67 +1,41 @@
 // The setup wizard (0.1.2) at /setup: one question per page, in plain words, until the panel opens at its address.
 // Before the owner exists: welcome, then the account (the one-time link from kiln.log, the console or the launcher).
 // After: how you open the panel (hosted access, the Kiln Launcher, your own address), that route's pages with a live
-// checklist, Discord sign-in for helpers (optional), done. The place is kept on the server (setup.json): the wizard
-// comes back to it after a restart, and Panel settings runs it again. Anything technical sits behind "Details".
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+// checklist, then (0.1.3) Discord sign-in for you and for helpers, mods, your dashboard (all optional), done. The place
+// is kept on the server (setup.json): the wizard comes back to it after a restart, and Panel settings runs it again.
+// Anything technical sits behind "Details".
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { api, ep, useSession } from "../app/context";
 import { isApiError } from "../api/http";
+import { takeExternalFragment } from "../identity/external";
 import { Splash, takeFragment } from "../pages/Public";
-import { useBranding } from "../shell/useBranding";
-import { setupSeen } from "./SetupPending";
-import { Banner, Button, TextField, errorText } from "../ui/kit";
+import { Banner, Button, TextField } from "../ui/kit";
+import { DashboardStep } from "./DashboardStep";
+import { DiscordStep, HelpersStep } from "./DiscordSteps";
+import { DoneStep } from "./DoneStep";
+import { Details, Frame, PagesContext, say } from "./Frame";
+import { ModsStep } from "./ModsStep";
 import {
-  allDone, checkLabel, firstProblem, nameProblem, normalizeName, position, reasonText, resumeAt, setupApi, suggestName,
-  type Route, type SetupState, type SetupStep, type StepId,
+  allDone, checkLabel, firstProblem, nameProblem, nextPage, normalizeName, prevPage, reasonText, resumeAt, routeOf, setupApi, suggestName,
+  type PageOptions, type Route, type SetupState, type SetupStep, type StepId,
 } from "./wizard";
 
 const setup = setupApi(api);
 const KILN_DISCORD = "https://discord.gg/7pjr8SMTfU";
 const LE_TERMS = "https://letsencrypt.org/repository/";
 
-const wait = (s: number | null) => (s ? ` Try again in ${s >= 60 ? `${Math.ceil(s / 60)} min` : `${s} s`}.` : "");
-const say = (e: unknown) => (isApiError(e) ? e.message.replace(/^./, (c) => c.toUpperCase()) + (/[.!?]$/.test(e.message) ? "" : ".") + wait(e.retryAfter) : errorText(e));
-
-/** The wizard's frame: the server's name, the progress dots, one page. */
-function Frame({ step, route, title, children, back }: { step: StepId; route: Route | ""; title: string; children: ReactNode; back?: () => void }) {
-  const b = useSession((s) => s.branding);
-  useBranding(b, "Setup");
-  const { at, of } = position(route, step);
-  return (
-    <div className="wa-auth">
-      <main className="wa-auth-card wa-wizard" aria-labelledby="wa-wizard-title" data-step={step}>
-        <div className="wa-wizard-top">
-          <div className="wa-auth-brand">
-            {b.logo ? <img className="wa-auth-logo" src={b.logo} alt="" /> : <span className="wa-mark wa-mark-l" aria-hidden />}
-            <div className="wa-auth-server">{b.name}</div>
-          </div>
-          <ol className="wa-dots" aria-label={`Step ${at} of ${of}`}>
-            {Array.from({ length: of }, (_, i) => <li key={i} className={i + 1 < at ? "done" : i + 1 === at ? "now" : ""} aria-hidden />)}
-          </ol>
-        </div>
-        <h1 id="wa-wizard-title" className="wa-auth-title">{title}</h1>
-        {children}
-        {back && <button type="button" className="k-link wa-link-btn wa-back" onClick={back}>Back</button>}
-      </main>
-    </div>
-  );
-}
-
-function Details({ children, label = "Details" }: { children: ReactNode; label?: string }) {
-  return (
-    <details className="wa-details wa-wizard-details">
-      <summary>{label}</summary>
-      <div className="wa-stack">{children}</div>
-    </details>
-  );
-}
+/** A Discord link that came back to the wizard (#ext=), taken once from the address before anything else reads it. */
+type ExtAnswer = ReturnType<typeof takeExternalFragment>;
 
 export function SetupWizard() {
   const phase = useSession((s) => s.phase);
   const status = useSession((s) => s.status);
   const me = useSession((s) => s.me);
   const loc = useLocation() as { state?: { setupToken?: string } };
+  // the Discord link's answer first: reading the setup link's token wipes the whole fragment
+  const ext = useRef<ExtAnswer | undefined>(undefined);
+  if (ext.current === undefined) ext.current = takeExternalFragment();
   const token = useRef<string | null>(null);
   if (token.current === null) token.current = loc.state?.setupToken ?? takeFragment("token") ?? "";
   const [started, setStarted] = useState(false);
@@ -69,7 +43,7 @@ export function SetupWizard() {
   if (phase === "loading") return <Splash />;
   if (phase === "signedIn") {
     if (!me?.owner) return <Navigate to="/" replace />;
-    return <OwnerWizard />;
+    return <OwnerWizard ext={ext.current} />;
   }
   if (status?.ownerExists) {
     return (
@@ -152,8 +126,9 @@ function OwnerStep({ token, back }: { token: string; back: () => void }) {
   );
 }
 
-/** After the account: the server keeps the place; every page reads its state. */
-function OwnerWizard() {
+/** After the account: the server keeps the place; every page reads its state. Back and Next follow the route's list of
+ * pages (wizard.ts pagesOf), so the dots, Back and a restart agree on where a page is. */
+function OwnerWizard({ ext }: { ext: ExtAnswer }) {
   const [state, setState] = useState<SetupState | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [step, setStep] = useState<StepId | null>(null);
@@ -178,7 +153,8 @@ function OwnerWizard() {
     const s = await load();
     if (s) {
       setRoute(s.route || "");
-      setStep(resumeAt(s));
+      // back from Discord with the link's answer: the Discord page, whatever was saved
+      setStep(ext && s.discord?.available !== false ? "discord" : resumeAt(s));
     }
     return s;
   };
@@ -217,18 +193,28 @@ function OwnerWizard() {
       </Frame>
     ) : <Splash />;
   }
+  const o: PageOptions = { discord: state.discord?.available !== false };
+  const nav = routeOf({ route, hosted: state.hosted });
+  const next = () => go(nextPage(nav, step, o) ?? "done");
+  const back = () => { const p = prevPage(nav, step, o); if (p) go(p); };
   const lost = failed && <Banner tone="warn" title="Lost touch with the panel for a moment">This page keeps trying.</Banner>;
-  switch (step) {
-    case "route": return <RouteStep state={state} pick={(r) => go(r === "hosted" ? "name" : r === "own" ? "own" : "launcher", r)} skip={() => go("done", "")} />;
-    case "name": return <NameStep state={state} back={() => go("route")} next={() => go("claim")} />;
-    case "claim": return <ClaimStep state={state} lost={lost} back={() => go("name")} next={() => go("progress")} />;
-    case "progress": return <ProgressStep state={state} lost={lost} route="hosted" back={() => go("claim")} next={() => go("discord")} recheck={() => void setup.check().then(load)} />;
-    case "own": return <OwnStep state={state} back={() => go("route")} next={() => { void load(); go("own-progress"); }} />;
-    case "own-progress": return <ProgressStep state={state} lost={lost} route="own" back={() => go("own")} next={() => go("discord")} recheck={() => void setup.check().then(load)} />;
-    case "launcher": return <LauncherStep state={state} back={() => go("route")} next={() => go("discord")} />;
-    case "discord": return <DiscordStep state={state} route={route} back={() => go(route === "hosted" ? "progress" : route === "own" ? "own-progress" : route === "launcher" ? "launcher" : "route")} next={() => go("done")} />;
-    default: return <DoneStep state={state} route={route} again={() => go("route")} />;
-  }
+  const page = (() => {
+    switch (step) {
+      case "route": return <RouteStep state={state} pick={(r) => go(r === "hosted" ? "name" : r === "own" ? "own" : "launcher", r)} skip={() => go("done", "")} />;
+      case "name": return <NameStep state={state} back={back} next={next} />;
+      case "claim": return <ClaimStep state={state} lost={lost} back={back} next={next} />;
+      case "progress": return <ProgressStep state={state} lost={lost} route="hosted" back={back} next={next} recheck={() => void setup.check().then(load)} />;
+      case "own": return <OwnStep state={state} back={back} next={() => { void load(); next(); }} />;
+      case "own-progress": return <ProgressStep state={state} lost={lost} route="own" back={back} next={next} recheck={() => void setup.check().then(load)} />;
+      case "launcher": return <LauncherStep state={state} back={back} next={next} />;
+      case "discord": return <DiscordStep state={state} route={nav} ext={ext} reload={load} back={back} next={next} />;
+      case "helpers": return <HelpersStep state={state} route={nav} reload={load} back={back} next={next} />;
+      case "mods": return <ModsStep route={nav} back={back} next={next} />;
+      case "dashboard": return <DashboardStep route={nav} back={back} next={next} />;
+      default: return <DoneStep state={state} route={route} back={back} />;
+    }
+  })();
+  return <PagesContext.Provider value={o}>{page}</PagesContext.Provider>;
 }
 
 // ------------------------------------------------------------------------------------------------ how you open it
@@ -469,87 +455,3 @@ function LauncherStep({ state, back, next }: { state: SetupState; back: () => vo
   );
 }
 
-// ------------------------------------------------------------------------------------------------ Discord (optional)
-
-function DiscordStep({ state, route, back, next }: { state: SetupState; route: Route | ""; back: () => void; next: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [guild, setGuild] = useState(state.discord?.guildId ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const available = state.discord?.available !== false;
-  useEffect(() => {
-    if (!available) next(); // a build without the broker's keys: nothing to offer
-  }, [available]); // eslint-disable-line react-hooks/exhaustive-deps
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await setup.discord(guild.trim());
-      next();
-    } catch (x) {
-      setError(isApiError(x) && x.code === "reauth_required" ? "Confirm it's you in the box that opened, then press Save again." : say(x));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Frame step="discord" route={route} title="Let helpers sign in with Discord?" back={back}>
-      <p className="wa-lead">Optional. You can do this later in Panel settings.</p>
-      {!open ? (
-        <div className="wa-row">
-          <Button kind="primary" onClick={next}>Skip</Button>
-          <Button onClick={() => setOpen(true)}>Set it up</Button>
-        </div>
-      ) : (
-        <form className="wa-form" onSubmit={(e) => void save(e)} noValidate>
-          <TextField label="Your Discord server's ID" value={guild} onChange={(v) => setGuild(v.replace(/[^0-9]/g, ""))} inputMode="numeric" mono autoFocus />
-          <Details label="How do I find it?">
-            <p className="wa-note">In Discord: Settings &gt; Advanced &gt; Developer Mode on. Then right-click your server and choose Copy Server ID.</p>
-            <p className="wa-note">Helpers still need an account here (Users and roles). Each links Discord once, in My account.</p>
-          </Details>
-          {error && <Banner tone="err" title={error} />}
-          <div className="wa-row">
-            <Button kind="primary" type="submit" busy={busy} disabled={guild.length < 5}>Save</Button>
-            <Button kind="ghost" onClick={next}>Skip</Button>
-          </div>
-        </form>
-      )}
-    </Frame>
-  );
-}
-
-// ------------------------------------------------------------------------------------------------ done
-
-function DoneStep({ state, route, again }: { state: SetupState; route: Route | ""; again: () => void }) {
-  const nav = useNavigate();
-  const url = route === "hosted" || (route === "" && state.hosted?.ready) ? state.hosted?.url : route === "own" ? state.own?.url : null;
-  const here = url && typeof location !== "undefined" && url.startsWith(location.origin);
-  const finished = useRef<Promise<unknown> | null>(null);
-  useEffect(() => {
-    setupSeen();
-    if (!state.done && !finished.current) finished.current = setup.done().catch(() => undefined);
-  }, [state.done]);
-  const toPanel = () => void (finished.current ?? Promise.resolve()).then(() => nav("/", { replace: true }));
-  const title = route === "" && !state.hosted?.ready ? "Setup skipped" : "You're all set";
-  const where = useMemo(() => route === "launcher" ? "the Kiln Launcher's Open web panel" : url, [route, url]);
-  return (
-    <Frame step="done" route={route} title={title}>
-      {url ? (
-        <>
-          <p className="wa-lead">Your panel: <strong className="k-mono wa-break">{url}</strong></p>
-          <p className="wa-note">Bookmark it. Change anything later in Panel settings.</p>
-          {here ? <Button kind="primary" onClick={toPanel}>Go to the panel</Button>
-            : <a className="k-btn k-btn-primary" href={url}>Open your panel</a>}
-        </>
-      ) : (
-        <>
-          <p className="wa-lead">{route === "launcher" ? <>Open your panel with {where}.</> : "You can run the setup again from Panel settings."}</p>
-          <Button kind="primary" onClick={toPanel}>Go to the panel</Button>
-        </>
-      )}
-      {(url && !here) && <button type="button" className="k-link wa-link-btn" onClick={toPanel}>Stay on this address</button>}
-      <button type="button" className="k-link wa-link-btn" onClick={again}>Run the setup again</button>
-    </Frame>
-  );
-}

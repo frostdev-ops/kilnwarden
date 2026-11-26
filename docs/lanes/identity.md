@@ -9,13 +9,17 @@ KAP op is used.
 `identity.json`
 ```json
 { "steam": { "enabled": false },
-  "discord": { "enabled": false, "broker": "https://frostdev.io", "guildId": "", "allowedRoles": [] } }
+  "discord": { "enabled": false, "ownerOnly": false, "broker": "https://frostdev.io", "guildId": "", "allowedRoles": [] } }
 ```
 - Discord sign-in goes through frostdev.io's broker, which is live; release builds pin its keys from 0.1.1 on. It is
   only active when enabled and the build pins a key for `broker`. Embed the public pin file with
   `-p:WebAdminBrokerPins=...` at build time. There is no setting that adds a key at runtime.
 - `guildId` is required when Discord is enabled; `allowedRoles` (role ids) gate who may sign in (empty: any member).
   Roles never grant panel roles.
+- `ownerOnly` (0.1.3; the setup wizard's "Sign in with Discord" turns it on when it switches Discord on): only owner
+  accounts may link Discord and sign in with it. Everyone else is refused at `/start` (link) and at `/complete` (link and
+  sign-in, also for an account linked before, or a link started before the switch), their link shows `enabled: false`,
+  and a `roleMap` grant does not count for them. The wizard's helpers page turns it off.
 - `identity-state.json` holds this panel's random id (`panelId`, 32 hex) that broker assertions must name.
 
 `acme.json` (used while `settings.json` `tls.mode` is `acme`)
@@ -39,13 +43,13 @@ Errors use the panel's `{ "error": { "code", "message" } }`.
 
 | Method, path | Access | Contract |
 |---|---|---|
-| `POST /api/identity/start` `{provider: "steam"\|"discord", intent: "login"\|"link"}` | Public (login); link: signed in, unrestricted, **recent proof** | 200 `{url}` (the provider page) and sets the HttpOnly SameSite=Lax binder cookie `wa-ext` (`__Host-wa-ext` on HTTPS), 5 min. 404 `unknown_provider` (off), 400 `invalid`, 401 `unauthenticated`, 403 `restricted` / `reauth_required`, 429 `rate_limited`. |
-| `GET /api/identity/steam/callback?state=&openid.*` | Public, with the starter's binder cookie | Verifies (below), settles the intent once, 303 to `/signin#ext=<state>` (login) or `/account#ext=<state>` (link); unknown state: `/signin#ext-error=expired`. `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. |
+| `POST /api/identity/start` `{provider: "steam"\|"discord", intent: "login"\|"link", back?: "account"\|"setup"}` | Public (login); link: signed in, unrestricted, **recent proof** | 200 `{url}` (the provider page) and sets the HttpOnly SameSite=Lax binder cookie `wa-ext` (`__Host-wa-ext` on HTTPS), 5 min. `back` (0.1.3, links only, owners only): `setup` returns the answer to `/setup` instead of `/account`; nothing else is accepted, so it never names a URL. 404 `unknown_provider` (off), 400 `invalid`, 401 `unauthenticated`, 403 `restricted` / `reauth_required` / `owner_only` (`ownerOnly`) / `forbidden` (`back: "setup"` by a non-owner), 429 `rate_limited`. |
+| `GET /api/identity/steam/callback?state=&openid.*` | Public, with the starter's binder cookie | Verifies (below), settles the intent once, 303 to `/signin#ext=<state>` (login) or `/account#ext=<state>` (link; `/setup#ext=<state>` for `back: "setup"`); unknown state: `/signin#ext-error=expired`. `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. |
 | `GET /api/identity/discord/callback?state=&assertion=` (or `&error=`) | Public | Same, for the broker's assertion. |
-| `POST /api/identity/complete` `{state}` | Public; needs the binder cookie of the browser that started it | Login: the sign-in answer of `/api/auth/login` (session cookie, `{ok, user}`), or 401 `not_linked`. Link: 200 `{ok, linked:{provider, subject}}`, only from the same session, still with recent proof; 409 `linked_elsewhere`. Failures: 400 `ext_expired` (unknown, used, other browser), 409 `ext_pending`, 400 `ext_canceled`, 403 `not_allowed` (Discord roles), 401 `ext_failed`. One use. |
-| `GET /api/identity/links` | Signed in | `{providers:[{id,title}] (active ones), links:[{provider, subject, enabled}]}` (own account). |
+| `POST /api/identity/complete` `{state}` | Public; needs the binder cookie of the browser that started it | Login: the sign-in answer of `/api/auth/login` (session cookie, `{ok, user}`), or 401 `not_linked`. Link: 200 `{ok, linked:{provider, subject}}`, only from the same session, still with recent proof; 409 `linked_elsewhere`. Failures: 400 `ext_expired` (unknown, used, other browser), 409 `ext_pending`, 400 `ext_canceled`, 403 `not_allowed` (Discord roles), 403 `not_member` (the broker's `error=not_member`), 403 `owner_only` (`ownerOnly`, for a non-owner), 401 `ext_failed`. One use. |
+| `GET /api/identity/links` | Signed in | `{providers:[{id,title}] (active ones this account may use), links:[{provider, subject, enabled}]}` (own account; `enabled`: the provider is on and this account may use it). |
 | `DELETE /api/identity/links/{provider}` | Signed in, **recent proof** | 204, 404 when not linked, 403 `reauth_required`. |
-| `GET /api/identity/status` | `users.view` | `{panelId, steam:{enabled,active}, discord:{enabled,active,broker,keyPinned,guildId,allowedRoles(count)}}`. |
+| `GET /api/identity/status` | `users.view` | `{panelId, steam:{enabled,active}, discord:{enabled,active,broker,keyPinned,guildId,allowedRoles(count),ownerOnly}}`. |
 | `GET /api/acme/status` | `acme.view` (Admin) | `{active, phase, blocked, directory, challenge, acceptTerms, names, certificate:{sha256,names,notAfter,keyType,chainLength}\|null, lastAttempt, lastSuccess, nextAttempt, lastError, failures, ordersThisWeek, maxOrdersPerWeek}`. |
 | `POST /api/acme/renew` | `acme.renew` (Owner, **Sensitive**: recent proof via the gate) | 202 `{ok, started}`; 409/429 `acme_blocked` with the reason (mode, owner, terms, names, backoff, weekly budget). Audited `acme.renew`. |
 

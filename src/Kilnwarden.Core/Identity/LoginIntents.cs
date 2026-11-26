@@ -4,6 +4,13 @@ using Kilnwarden.Auth;
 
 namespace Kilnwarden.Identity;
 
+/// <summary>Where a link's answer goes back to in the app: My account (the default) or the setup wizard (0.1.3).</summary>
+public enum IntentReturn
+{
+    Account,
+    Setup,
+}
+
 public enum IntentKind
 {
     /// <summary>Sign in to the account linked to the identity.</summary>
@@ -25,6 +32,9 @@ public sealed class LoginIntent
 
     /// <summary>For a link: the session that started it (it must be the one that completes it).</summary>
     public string? SessionHandle { get; init; }
+
+    /// <summary>For a link: the app page the provider's answer returns to, one of a fixed few (never a URL).</summary>
+    public IntentReturn Return { get; init; }
 
     /// <summary>The exact return URL the provider must report (Steam's openid.return_to, the broker's "ret").</summary>
     public required string ReturnUrl { get; init; }
@@ -59,14 +69,15 @@ public sealed class LoginIntents(TimeProvider time)
     public int Count => _all.Count;
 
     /// <summary>A new intent; returns its state (goes to the provider) and binder (goes in the browser's cookie).</summary>
-    public (string State, string Binder, LoginIntent Intent) Create(string provider, IntentKind kind, string? sessionHandle, Func<string, string> returnUrl)
+    public (string State, string Binder, LoginIntent Intent) Create(string provider, IntentKind kind, string? sessionHandle, Func<string, string> returnUrl,
+        IntentReturn back = IntentReturn.Account)
     {
         Purge();
         var state = SecretToken.New();
         var binder = SecretToken.New();
         var intent = new LoginIntent
         {
-            Provider = provider, Kind = kind, BinderHash = SecretToken.Hash(binder), SessionHandle = sessionHandle, ReturnUrl = returnUrl(state),
+            Provider = provider, Kind = kind, BinderHash = SecretToken.Hash(binder), SessionHandle = sessionHandle, Return = back, ReturnUrl = returnUrl(state),
             Nonce = SecretToken.New(), Expires = time.GetUtcNow() + Lifetime,
         };
         _all[SecretToken.Hash(state)] = intent;

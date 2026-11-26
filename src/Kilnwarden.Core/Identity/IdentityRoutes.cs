@@ -16,7 +16,9 @@ internal static class IdentityRoutes
     public const string BinderCookie = "wa-ext";
     public const long BodyCap = 4096;
 
-    internal sealed record StartBody(string? Provider, string? Intent);
+    /// <summary>/start's body. <c>back</c> (0.1.3, links only): "setup" returns the answer to the setup wizard instead of
+    /// My account; nothing else is accepted, so it never names a URL.</summary>
+    internal sealed record StartBody(string? Provider, string? Intent, string? Back = null);
     internal sealed record CompleteBody(string? State);
 
     public static void Map(ModuleRegistration m, IdentityService id)
@@ -28,6 +30,8 @@ internal static class IdentityRoutes
             var b = ctx.ReadJson<StartBody>();
             var kind = b.Intent switch { "login" => IntentKind.Login, "link" => IntentKind.Link, _ => (IntentKind?)null };
             if (kind is null) return Done(HttpResponse.Error(400, "invalid", "intent is \"login\" or \"link\""));
+            var back = b.Back switch { null or "" or "account" => IntentReturn.Account, "setup" => IntentReturn.Setup, _ => (IntentReturn?)null };
+            if (back is null || (back == IntentReturn.Setup && kind != IntentKind.Link)) return Done(HttpResponse.Error(400, "invalid", "back is \"account\" or, for a link, \"setup\""));
             if (b.Provider is not { } provider || !id.IsEnabled(provider))
                 return Done(HttpResponse.Error(404, "unknown_provider", "that sign-in method is not available"));
             string? session = null;
@@ -35,13 +39,15 @@ internal static class IdentityRoutes
             {
                 if (ctx.User is not WebPrincipal p) return Done(HttpResponse.Error(401, "unauthenticated", "sign in first"));
                 if (p.Restriction != Restriction.None) return Done(HttpResponse.Error(403, "restricted", "finish your account setup first"));
+                if (back == IntentReturn.Setup && !p.IsOwner) return Done(HttpResponse.Error(403, "forbidden", "only the owner runs the setup"));
+                if (!id.Allows(provider, p.Account)) return Done(HttpResponse.Error(403, "owner_only", "on this panel only the owner signs in with Discord"));
                 if (!auth.RecentlyAuthenticated(p))
                     return Done(HttpResponse.Error(403, "reauth_required", "re-authenticate with your password or enrolled two-factor code, then retry"));
                 session = p.Session.Handle;
             }
             if (auth.Limiter.Attempt(ctx.ClientAddress, null) is { } wait)
                 return Done(AuthRoutes.Refusal(new SignInResult.Refused(429, "rate_limited", "too many attempts", wait)));
-            var (url, binder) = id.Start(provider, kind.Value, session, ctx.Origin);
+            var (url, binder) = id.Start(provider, kind.Value, session, ctx.Origin, back.Value);
             // Lax (not Strict): the provider's redirect back is a cross-site top-level GET, and the callback must see it
             ctx.ResponseHeaders.Add("Set-Cookie", new SetCookie(AuthCookies.Name(ctx, BinderCookie), binder)
             {
@@ -76,7 +82,10 @@ internal static class IdentityRoutes
             if (!FromStarter(ctx, intent)) return Done(Back(null, null));
             if (!intent.Settled)
             {
-                if (q.GetValueOrDefault("error") is { } err) intent.Settle(null, err == "access_denied" ? "canceled" : "the broker refused the sign-in");
+                // the broker's codes (docs/protocol-relay-broker.md 6.2): a cancel and "not a member of the server" are
+                // told apart; any other code is a refusal
+                if (q.GetValueOrDefault("error") is { } err)
+                    intent.Settle(null, err switch { "access_denied" => "canceled", "not_member" => "not_member", _ => "the broker refused the sign-in" });
                 else
                 {
                     var (who, error) = id.Discord.Verify(q.GetValueOrDefault("assertion"), intent, id.Settings.Discord, id.PanelId);
@@ -104,12 +113,21 @@ internal static class IdentityRoutes
                 {
                     "canceled" => HttpResponse.Error(400, "ext_canceled", "the sign-in was canceled"),
                     "not_allowed" => HttpResponse.Error(403, "not_allowed", "your Discord roles do not allow signing in to this panel"),
+                    "not_member" => HttpResponse.Error(403, "not_member", "that Discord account is not a member of the panel's Discord server"),
                     _ => HttpResponse.Error(401, "ext_failed", $"the {intent.Provider} sign-in could not be verified: {intent.Error}"),
                 });
             }
             if (!id.IsEnabled(intent.Provider)) return (HttpResponse.Error(404, "unknown_provider", "that sign-in method is not available"));
             if (intent.Kind == IntentKind.Login)
             {
+                // discord.ownerOnly: an account that is not an owner is refused before anything else happens
+                var linkedTo = auth.Accounts.All.Where(x => x.Links.TryGetValue(who.Provider, out var subject) && subject == who.Subject).Take(2).ToList();
+                if (linkedTo is [{ } only] && !id.Allows(who.Provider, only))
+                {
+                    auth.Audit.Record(AuditLog.Entry("auth.login", null, ctx.ClientAddress, false, $"{who.Provider} sign-in is for the owner only on this panel",
+                        new JsonObject { ["via"] = who.Provider }, userName: only.Name) with { User = only.Id });
+                    return HttpResponse.Error(403, "owner_only", "on this panel only the owner signs in with Discord");
+                }
                 // the provider's role mapping first (identity.json roleMap), so the new session starts with those roles
                 await id.SyncMappedRolesAsync(who, ctx.ClientAddress, ctx.Aborted).ConfigureAwait(false);
                 var r = auth.SignInExternal(who, client, (ctx.User as WebPrincipal)?.Session.Handle);
@@ -119,6 +137,7 @@ internal static class IdentityRoutes
             if (ctx.User is not WebPrincipal p || p.Session.Handle != intent.SessionHandle)
                 return (HttpResponse.Error(401, "unauthenticated", "link from the session that started it"));
             if (p.Restriction != Restriction.None) return (HttpResponse.Error(403, "restricted", "finish your account setup first"));
+            if (!id.Allows(who.Provider, p.Account)) return HttpResponse.Error(403, "owner_only", "on this panel only the owner signs in with Discord");
             if (!auth.RecentlyAuthenticated(p))
                 return (HttpResponse.Error(403, "reauth_required", "re-authenticate with your password or enrolled two-factor code, then retry"));
             if (auth.Link(p, who, client) is { } refused) return AuthRoutes.Refusal(refused);
@@ -131,9 +150,9 @@ internal static class IdentityRoutes
             var p = (WebPrincipal)ctx.User!;
             return Done(HttpResponse.Json(new JsonObject
             {
-                ["providers"] = new JsonArray([.. id.Enabled().Select(x => (JsonNode)new JsonObject { ["id"] = x.Id, ["title"] = x.Title })]),
+                ["providers"] = new JsonArray([.. id.EnabledFor(p.Account).Select(x => (JsonNode)new JsonObject { ["id"] = x.Id, ["title"] = x.Title })]),
                 ["links"] = new JsonArray([.. p.Account.Links.OrderBy(kv => kv.Key, StringComparer.Ordinal)
-                    .Select(kv => (JsonNode)new JsonObject { ["provider"] = kv.Key, ["subject"] = kv.Value, ["enabled"] = id.IsEnabled(kv.Key) })]),
+                    .Select(kv => (JsonNode)new JsonObject { ["provider"] = kv.Key, ["subject"] = kv.Value, ["enabled"] = id.IsEnabled(kv.Key) && id.Allows(kv.Key, p.Account) })]),
             }));
         });
 
@@ -156,22 +175,24 @@ internal static class IdentityRoutes
                 {
                     ["enabled"] = s.Discord.Enabled, ["active"] = id.IsEnabled("discord"), ["broker"] = s.Discord.Broker,
                     ["keyPinned"] = id.Discord.HasKeyFor(s.Discord.Broker), ["guildId"] = s.Discord.GuildId, ["allowedRoles"] = s.Discord.AllowedRoles.Count,
+                    ["ownerOnly"] = s.Discord.OwnerOnly,
                 },
             }));
         });
     }
 
-    /// <summary>Back to the app: the sign-in page (or the account page for a link) with the state in the fragment, which
-    /// never reaches a server or a Referer. An unknown state goes to the sign-in page with an error.</summary>
     /// <summary>Whether the request carries the binder cookie of the browser that started <paramref name="intent"/>.</summary>
     private static bool FromStarter(RequestContext ctx, LoginIntent intent) =>
         AuthCookies.Read(ctx, BinderCookie) is { } binder && SecretToken.HashEquals(SecretToken.Hash(binder), intent.BinderHash);
 
+    /// <summary>Back to the app: the sign-in page (or, for a link, the account page or the setup wizard) with the state in
+    /// the fragment, which never reaches a server or a Referer. An unknown state goes to the sign-in page with an error.</summary>
     private static HttpResponse Back(LoginIntent? intent, string? state)
     {
+        var page = intent is null ? "/signin" : intent.Kind != IntentKind.Link ? "/signin" : intent.Return == IntentReturn.Setup ? "/setup" : "/account";
         var res = intent is null || state is null
             ? HttpResponse.Redirect("/signin#ext-error=expired")
-            : HttpResponse.Redirect((intent.Kind == IntentKind.Link ? "/account" : "/signin") + "#ext=" + state);
+            : HttpResponse.Redirect(page + "#ext=" + state);
         res.Headers.Set("Cache-Control", "no-store");
         res.Headers.Set("Referrer-Policy", "no-referrer");
         return res;

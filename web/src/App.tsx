@@ -22,6 +22,7 @@ import { LauncherPage, SignInPage } from "./pages/Public";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SetupPending } from "./setup/SetupPending";
 import { ModsPage } from "./pages/Mods";
+import { MapArtNotice, useNoMapArt } from "./pages/MapArt";
 import { SavedCommandsPage } from "./pages/SavedCommands";
 import { SchedulesPage } from "./pages/Schedules";
 import { UsersPage } from "./pages/Users";
@@ -29,6 +30,12 @@ import { AdminArea, RequireSignIn } from "./shell/Gate";
 import { useSession } from "./app/context";
 import { Reauth } from "./shell/Reauth";
 import { Shell } from "./shell/Shell";
+
+/** The admin pages' frame: on the Map page without map art, the panel's own notice above it (0.1.3). */
+function AdminFrame({ children }: { children: ReactNode }) {
+  const noArt = useNoMapArt();
+  return <div className={"wa-admin" + (noArt ? " wa-map-noart" : "")}><MapArtNotice />{children}</div>;
+}
 
 /** The panel administers one server: another id in the URL goes to the overview. */
 function OnlyThisServer({ children }: { children: ReactNode }) {
@@ -52,7 +59,7 @@ export function App() {
           <Route path="/launcher" element={<LauncherPage />} />
           <Route element={<RequireSignIn><Shell /></RequireSignIn>}>
             <Route index element={<SetupPending><HomePage /></SetupPending>} />
-            <Route path={`servers/${SERVER_ID}/admin/*`} element={<AdminArea><div className="wa-admin"><AdminRoutes serverId={SERVER_ID} /></div></AdminArea>} />
+            <Route path={`servers/${SERVER_ID}/admin/*`} element={<AdminArea><AdminFrame><AdminRoutes serverId={SERVER_ID} /></AdminFrame></AdminArea>} />
             {/* AdminConfigsPage takes its server from the route's :id */}
             <Route path="servers/:id/configs" element={<OnlyThisServer><AdminArea><div className="wa-admin"><AdminConfigsPage /></div></AdminArea></OnlyThisServer>} />
             <Route path={`servers/${SERVER_ID}/mods`} element={<Navigate to="/mods" replace />} />

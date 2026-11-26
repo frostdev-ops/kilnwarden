@@ -6,10 +6,12 @@ import { createRoot } from "react-dom/client";
 import { session } from "./app/context";
 import { kapUrl, trackingWebSocket } from "./api/kapSocket";
 import { App } from "./App";
+import { useMapArtStatus } from "./pages/MapArt";
 import "./app.css";
 
-// the map art and catalogs: the owner's copy of the launcher's admin assets, served by the panel (MapAssetsComponent)
-const HOST = { assetsRoot: () => "/api/core/map-assets/" };
+// the map art and catalogs: the owner's copy of the launcher's admin assets, served by the panel (MapAssetsComponent);
+// its state as the Map page reads it (0.1.3: a panel never prepares art, so the page never says "Preparing…")
+const HOST = { assetsRoot: () => "/api/core/map-assets/", useArtStatus: useMapArtStatus };
 
 const transport = createWebSocketTransport({
     url: () => kapUrl(),

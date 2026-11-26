@@ -1,9 +1,11 @@
-// The setup wizard's logic (0.1.2), apart from React so the unit tests can run it: the pages of each route, the panel
-// name's rules (the same as the server's PanelNames and the claim pages'), and the checklist in plain words.
+// The setup wizard's logic (0.1.2; 0.1.3 adds the owner's Discord sign-in, mods and the dashboard), apart from React so
+// the unit tests can run it: the pages of each route, Back and Next, the panel name's rules (the same as the server's
+// PanelNames and the claim pages'), the checklist and the Discord link's answers in plain words, and the end's list.
 import type { Api } from "../api/http";
 
 export type Route = "hosted" | "launcher" | "own";
-export type StepId = "welcome" | "owner" | "route" | "name" | "claim" | "progress" | "own" | "own-progress" | "launcher" | "discord" | "done";
+export type StepId = "welcome" | "owner" | "route" | "name" | "claim" | "progress" | "own" | "own-progress" | "launcher" | "discord" | "helpers" | "mods"
+  | "dashboard" | "done";
 export type StepState = "done" | "working" | "waiting" | "failed";
 
 export interface SetupProblem { title: string; fix: string; detail: string | null }
@@ -20,7 +22,7 @@ export interface SetupState {
   launcher: string;
   hosted?: { host: string; name: string | null; url?: string; steps?: SetupStep[]; ready?: boolean; off?: boolean };
   own?: { host?: string; port: number; challenge?: string; url?: string; steps?: SetupStep[]; ready?: boolean };
-  discord?: { enabled: boolean; guildId: string; available: boolean };
+  discord?: { enabled: boolean; guildId: string; available: boolean; ownerOnly?: boolean; kilnGuild?: boolean; linked?: boolean };
 }
 export interface ClaimLink { claimUrl: string; host: string; expires: string | null }
 
@@ -33,40 +35,107 @@ export function setupApi(api: Api) {
     own: (host: string, port: number, challenge: "http-01" | "tls-alpn-01") => api.post<{ ok: true }>("/api/setup/own", { host, port, challenge }),
     check: () => api.post<{ ok: true }>("/api/setup/check"),
     discord: (guildId: string) => api.post<{ ok: true }>("/api/setup/discord", { guildId }),
+    discordMe: (anyway = false) => api.post<{ ok: true; guildId: string; ownerOnly: boolean }>("/api/setup/discord/me", anyway ? { anyway: true } : {}),
     done: () => api.post<{ ok: true }>("/api/setup/done"),
     again: () => api.post<{ ok: true }>("/api/setup/again"),
   };
 }
 
+/** Which optional pages this panel has: the Discord pages need a build with the broker's keys. */
+export interface PageOptions { discord?: boolean }
+
+/** The pages every route ends with: your Discord sign-in, helpers' (both optional), mods, the dashboard, the end. */
+function tail(o: PageOptions): StepId[] {
+  return [...(o.discord === false ? [] : (["discord", "helpers"] as StepId[])), "mods", "dashboard", "done"];
+}
+
 /** The pages of a route, in order (the welcome and the account come before any route). */
-export function pagesOf(route: Route | ""): StepId[] {
+export function pagesOf(route: Route | "", o: PageOptions = {}): StepId[] {
   const start: StepId[] = ["welcome", "owner", "route"];
   switch (route) {
-    case "hosted": return [...start, "name", "claim", "progress", "discord", "done"];
-    case "own": return [...start, "own", "own-progress", "discord", "done"];
-    case "launcher": return [...start, "launcher", "discord", "done"];
+    case "hosted": return [...start, "name", "claim", "progress", ...tail(o)];
+    case "own": return [...start, "own", "own-progress", ...tail(o)];
+    case "launcher": return [...start, "launcher", ...tail(o)];
     default: return [...start, "done"];
   }
 }
 
 /** "Step 3 of 7" for the progress dots: where this page is in its route. */
-export function position(route: Route | "", step: StepId): { at: number; of: number } {
-  const pages = pagesOf(route === "" ? "hosted" : route);
+export function position(route: Route | "", step: StepId, o: PageOptions = {}): { at: number; of: number } {
+  const pages = pagesOf(route === "" ? "hosted" : route, o);
   const i = pages.indexOf(step);
   return { at: i < 0 ? pages.length : i + 1, of: pages.length };
 }
 
-/** The page to come back to: the saved one if it belongs to the saved route, else the route's choice. */
-export function resumeAt(s: Pick<SetupState, "route" | "step" | "done" | "hosted"> & { client?: SetupState["client"] }): StepId {
+/** The page after `step` on its route (null at the end). The route's choice picks its own next page. */
+export function nextPage(route: Route | "", step: StepId, o: PageOptions = {}): StepId | null {
+  const pages = pagesOf(route, o);
+  const i = pages.indexOf(step);
+  return i >= 0 && i + 1 < pages.length ? pages[i + 1] : null;
+}
+
+/** The page Back goes to (null: none; the account exists, so nothing comes before the choice). */
+export function prevPage(route: Route | "", step: StepId, o: PageOptions = {}): StepId | null {
+  const pages = pagesOf(route, o);
+  const i = pages.indexOf(step);
+  return i > 2 ? pages[i - 1] : null;
+}
+
+/** The route the pages follow: the chosen one, or hosted access when the server console already set it up. */
+export function routeOf(s: Pick<SetupState, "route" | "hosted">): Route | "" {
+  return s.route || (s.hosted?.ready ? "hosted" : "");
+}
+
+/** The page to come back to: the saved one if it belongs to the saved route (a page this build has not got: the next
+ * one it has), else the route's choice. */
+export function resumeAt(s: Pick<SetupState, "route" | "step" | "done" | "hosted"> & { client?: SetupState["client"]; discord?: SetupState["discord"] }): StepId {
   if (s.done) return "done";
-  const pages = pagesOf(s.route);
+  const o: PageOptions = { discord: s.discord?.available !== false };
+  const route = routeOf(s);
+  const pages = pagesOf(route, o);
+  const all = pagesOf(route);
   const step = s.step as StepId;
-  if (pages.includes(step) && step !== "welcome" && step !== "owner") return step;
-  // set up from the server console: the name already works, only the optional page and the end are left (or, opened at
-  // the name itself before its last check, the checklist)
-  if (s.hosted?.ready && (s.route === "" || s.route === "hosted")) return "discord";
+  if (pages.includes(step) && step !== "welcome" && step !== "owner" && (route === s.route || step !== "done")) return step;
+  if (all.includes(step) && step !== "welcome" && step !== "owner") return all.slice(all.indexOf(step)).find((p) => pages.includes(p)) ?? "done";
+  // set up from the server console: the name already works, only the optional pages and the end are left (or, opened
+  // at the name itself before its last check, the checklist)
+  if (s.hosted?.ready && (s.route === "" || s.route === "hosted")) return pages[pages.indexOf("progress") + 1];
   if (s.client?.hosted && s.hosted?.steps) return "progress";
   return "route";
+}
+
+/** The owner's Discord link (and the broker check before it) when it did not work, in one or two plain sentences. */
+export function discordProblem(code: string, kilnGuild = true): string {
+  switch (code) {
+    case "ext_canceled": return "You canceled on Discord. Nothing changed.";
+    case "linked_elsewhere": return "That Discord account is already linked to another account here. Unlink it there first, or use another Discord account.";
+    case "not_member": return kilnGuild
+      ? "Discord says you aren't in the Kiln Discord. Join it, then try again."
+      : "Discord says you aren't in your Discord server. Check you used the right Discord account, then try again.";
+    case "broker_unreachable": return "Discord sign-in isn't answering right now. Your password still works. Try again in a few minutes, or skip this.";
+    case "ext_expired": case "expired": case "malformed": return "That took too long, or was started in another browser. Try again.";
+    case "reauth_required": return "Confirm it's you in the box that opened, then press the button again.";
+    case "owner_only": return "Only the owner can do this.";
+    default: return "Discord didn't confirm it. Try again, or skip this.";
+  }
+}
+
+/** One line of the end page: what it is, whether it was set up, and where to change it later. */
+export interface DoneRow { id: "address" | "discord" | "helpers" | "mods" | "dashboard"; label: string; done: boolean; where: string; to: string }
+
+/** The end page's list: what was set up and what was skipped (`extra`: mods waiting for the next start, and whether
+ * the dashboard has a layout of its own). */
+export function doneRows(s: SetupState, extra: { mods: number; customized: boolean }): DoneRow[] {
+  const route = routeOf(s);
+  const address = route === "launcher" || (route === "hosted" && !!s.hosted?.ready) || (route === "own" && !!s.own?.ready);
+  const rows: DoneRow[] = [{ id: "address", label: "Address", done: address, where: "Panel settings", to: "/settings" }];
+  if (s.discord?.available !== false && s.discord) {
+    rows.push({ id: "discord", label: "Discord sign-in", done: !!s.discord.linked, where: "My account", to: "/account" });
+    rows.push({ id: "helpers", label: "Helpers", done: s.discord.enabled && !s.discord.ownerOnly, where: "Panel settings", to: "/settings" });
+  }
+  rows.push({ id: "mods", label: "Mods", done: extra.mods > 0, where: "Mods", to: "/mods" });
+  rows.push({ id: "dashboard", label: "Dashboard", done: extra.customized, where: "Overview", to: "/" });
+  return rows;
 }
 
 export const MIN_NAME = 3;

@@ -60,9 +60,12 @@ public sealed class IdentityService
     };
 
     /// <summary>The roles of an account's synced lists that its provider's mapping still gives (AuthService.MappedRoles):
-    /// a mapping removed, a provider switched off or unlinked takes the role away at once.</summary>
+    /// a mapping removed, a provider switched off or unlinked takes the role away at once. So does a provider this account
+    /// may not use (Discord with discord.ownerOnly, for everyone but the owners): it can no longer sign in with it for the
+    /// mapping to be checked again, and switching Discord on for the owner alone must not give back roles it mapped
+    /// before.</summary>
     internal IEnumerable<string> StillMapped(Account a) =>
-        a.Synced.Where(kv => IsEnabled(kv.Key) && a.Links.ContainsKey(kv.Key))
+        a.Synced.Where(kv => IsEnabled(kv.Key) && a.Links.ContainsKey(kv.Key) && Allows(kv.Key, a))
             .SelectMany(kv => kv.Value.Where(r => MapOf(kv.Key).Any(m => m.Role == r)));
 
     /// <summary>Records what the provider's mapping gives the account linked to <paramref name="who"/> now, before a
@@ -101,19 +104,26 @@ public sealed class IdentityService
     }
 
     /// <summary>Makes an intent; the provider URL the browser goes to and the binder for its cookie.</summary>
-    public (string Url, string Binder) Start(string provider, IntentKind kind, string? session, string origin)
+    public (string Url, string Binder) Start(string provider, IntentKind kind, string? session, string origin, IntentReturn back = IntentReturn.Account)
     {
         if (provider == "steam")
         {
-            var (_, binder, intent) = Intents.Create(provider, kind, session, st => SteamOpenId.ReturnUrl(origin, st));
+            var (_, binder, intent) = Intents.Create(provider, kind, session, st => SteamOpenId.ReturnUrl(origin, st), back);
             return (SteamOpenId.RedirectUrl(origin, intent), binder);
         }
         else
         {
-            var (_, binder, intent) = Intents.Create(provider, kind, session, st => DiscordBroker.ReturnUrl(origin, st));
+            var (_, binder, intent) = Intents.Create(provider, kind, session, st => DiscordBroker.ReturnUrl(origin, st), back);
             return (DiscordBroker.RedirectUrl(Settings.Discord, PanelId, intent), binder);
         }
     }
+
+    /// <summary>Whether <paramref name="account"/> may use <paramref name="provider"/> to link or sign in: Discord with
+    /// discord.ownerOnly only for owner accounts; everything else for everyone.</summary>
+    public bool Allows(string provider, Account account) => provider != "discord" || !Settings.Discord.OwnerOnly || account.IsOwner;
+
+    /// <summary>The providers <paramref name="account"/> may link (My account's list).</summary>
+    public IEnumerable<ISignInProvider> EnabledFor(Account account) => Enabled().Where(p => Allows(p.Id, account));
 
     /// <summary>Keeps the shared provider list (GET /api/auth/status, AuthService.SignInExternal) in step with the settings.</summary>
     internal void Sync()

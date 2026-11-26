@@ -17,7 +17,8 @@ import {
 
 const KEY = ["updates"];
 
-function problem(e: unknown): string {
+/** A failed check or staging in plain words (also the setup wizard's "Add mods to your server"). */
+export function problem(e: unknown): string {
   if (isApiError(e) && e.code === "reauth_required") return "Confirm your identity in the dialog, then try again. Nothing was changed.";
   if (isApiError(e) && e.code === "signature_required") return "Not staged: this server stages only packages a trusted key signed (Sources below). Get the package's .minisig from its publisher and check it again with the signature.";
   if (isApiError(e) && e.code === "bad_signature") return `Refused: ${sentence(e.message)} The package may have been altered, or the signature is for another file.`;

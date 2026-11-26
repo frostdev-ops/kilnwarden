@@ -372,12 +372,16 @@ test('flows: dialog, filter, empty and error states, the re-auth prompt, setting
   await expect(page.getByLabel('x', { exact: true })).toHaveValue('2560');
   await expect(page.getByLabel('z', { exact: true })).toHaveValue('7680');
   await shot(page, 'desktop-commands-pickers');
-  // the overview: customize (buttons only), saved per account, back to the default
+  // the overview: customize (0.1.3: drag and drop; here the keyboard and the switches), saved per account, back to the default
+  // (dashboard.spec.ts drags with a mouse and a finger too)
   await page.goto('/');
   await page.getByRole('button', { name: 'Customize' }).click();
-  await page.getByRole('button', { name: 'Move Quick links up' }).click();
-  await page.getByRole('button', { name: 'Hide Panel' }).click();
-  await expect(page.getByRole('button', { name: 'Show Panel' })).toBeVisible();
+  await page.getByRole('button', { name: 'Move Quick links' }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await page.locator('label.k-toggle', { has: page.getByRole('switch', { name: 'Show Panel', exact: true }) }).click();
+  await expect(page.getByRole('switch', { name: 'Show Panel' })).not.toBeChecked();
   await shot(page, 'desktop-overview-customize');
   await page.getByRole('button', { name: 'Save layout' }).click();
   await expect(page.getByText(/Your overview is saved/)).toBeVisible();
@@ -386,7 +390,7 @@ test('flows: dialog, filter, empty and error states, the re-auth prompt, setting
   await expect(page.locator('.wa-dash-item .k-card-title').first()).toHaveText('Quick links');
   await expect(page.locator('.k-card-title', { hasText: /^Panel$/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Customize' }).click();
-  await page.getByRole('button', { name: 'Default layout' }).click();
+  await page.getByRole('button', { name: 'Use the default' }).click();
   await page.getByRole('button', { name: 'Save layout' }).click();
   await expect(page.locator('.wa-dash-item .k-card-title').first()).toHaveText('Server');
   // the public page, on, with map dots and markdown rules (seeded through the API with a recent proof)

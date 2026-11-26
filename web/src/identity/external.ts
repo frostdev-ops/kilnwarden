@@ -23,7 +23,8 @@ export type LinkAnswer = { ok: true; linked: { provider: string; subject: string
 
 export function identityEndpoints(api: Api) {
   return {
-    start: (provider: string, intent: Intent) => api.post<{ url: string }>("/api/identity/start", { provider, intent }),
+    /** `back` "setup" (0.1.3, a link from the setup wizard): Discord's answer returns to the wizard, not My account. */
+    start: (provider: string, intent: Intent, back?: "setup") => api.post<{ url: string }>("/api/identity/start", back ? { provider, intent, back } : { provider, intent }),
     complete: <T = SignInAnswer | LinkAnswer>(state: string) => api.post<T>("/api/identity/complete", { state }),
     links: () => api.get<Links>("/api/identity/links"),
     unlink: (provider: string) => api.del<void>(`/api/identity/links/${seg(provider)}`),
@@ -66,6 +67,8 @@ export function externalErrorText(code: string, provider?: string): string {
     case "ext_expired": case "expired": case "malformed": return "That sign-in expired or was started in another browser. Start again.";
     case "ext_pending": return "The provider has not answered yet. Start again.";
     case "linked_elsewhere": return `That ${p} account is linked to another panel account.`;
+    case "not_member": return "That Discord account is not a member of this panel's Discord server.";
+    case "owner_only": return "On this panel, only the owner signs in with Discord.";
     case "unknown_provider": return "That sign-in method is switched off.";
     default: return "The sign-in could not be verified. Start again.";
   }

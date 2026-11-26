@@ -5,13 +5,17 @@
 //
 //   dotnet run --project tools/devhost -- --server <dir> [--port 15800] [--web web/dist] [--tls off|self-signed]
 //       [--relay-origin <https origin>] [--relay-zone <zone>] [--acme-directory <https url>] [--acme-wait <seconds>]
-//       [--probe-via <host:port>]
+//       [--probe-via <host:port>] [--launcher-assets <dir>] [--broker-origin <https origin>]
 //
 // The setup wizard's end-to-end runs (0.1.2): --relay-origin and --relay-zone seed relay.json (off) with a test relay,
 // --acme-directory and --acme-wait seed acme.json with a test CA, as a harness does before the owner touches anything
 // (the wizard keeps both); --probe-via sends the wizard's address check to a test relay's browser side. The dev host
 // also runs the server console's kilnwarden commands from <dir>/kiln/control/console/*.cmd, answering in
 // <name>.result.json as Kiln's console folder does, so the console-only setup runs here too.
+// 0.1.3: --launcher-assets names the folder that stands in for the Kiln Launcher's admin-assets (the Map page's "copy
+// the launcher's map art"); without it the dev host finds none, whatever is on this PC. --broker-origin seeds identity.json
+// (Discord sign-in off) with a test broker, as --relay-origin does for the relay: the wizard's "Sign in with Discord"
+// then switches it on and links through that broker (a build pinned to its key: hosted access's end-to-end runs).
 //
 // <dir> is a server folder of its own (made if missing): kiln/data/kilnwarden gets settings.json (this port, TLS as
 // given, loopback) and auth.json (sign-in attempt budgets raised for tests) unless they exist. The log goes to
@@ -23,7 +27,7 @@ using Kilnwarden.Config;
 using Kilnwarden.Hosting;
 using Kilnwarden.Storage;
 
-string? server = null, web = null, tls = "off", relayOrigin = null, relayZone = null, acmeDirectory = null, probeVia = null;
+string? server = null, web = null, tls = "off", relayOrigin = null, relayZone = null, acmeDirectory = null, probeVia = null, launcherAssets = null, brokerOrigin = null;
 int? acmeWait = null;
 var port = 15800;
 for (var i = 0; i < args.Length; i++)
@@ -40,6 +44,8 @@ for (var i = 0; i < args.Length; i++)
         case "--acme-directory": acmeDirectory = Next(); break;
         case "--acme-wait": acmeWait = int.Parse(Next()); break;
         case "--probe-via": probeVia = Next(); break;
+        case "--launcher-assets": launcherAssets = Path.GetFullPath(Next()); break;
+        case "--broker-origin": brokerOrigin = Next(); break;
         default:
             Console.Error.WriteLine($"unknown argument {args[i]}\nusage: devhost --server <dir> [--port 15800] [--web web/dist] [--tls off|self-signed]");
             return 2;
@@ -71,6 +77,8 @@ if (!store.Exists("auth.json")) store.WriteJson("auth.json", new AuthSettings
 });
 if ((relayOrigin ?? relayZone) is not null && !store.Exists("relay.json"))
     store.WriteJson("relay.json", new Kilnwarden.Relay.RelaySettings { Enabled = false, Origin = relayOrigin ?? "https://frostdev.io", Zone = relayZone ?? "kiln.nexus" });
+if (brokerOrigin is not null && !store.Exists("identity.json"))
+    store.WriteJson("identity.json", new Kilnwarden.Identity.IdentitySettings { Discord = new Kilnwarden.Identity.DiscordSettings { Broker = brokerOrigin } });
 if ((acmeDirectory is not null || acmeWait is not null) && !store.Exists("acme.json"))
     store.WriteJson("acme.json", new Kilnwarden.Tls.Acme.AcmeSettings
     {
@@ -95,6 +103,8 @@ else Console.Error.WriteLine($"devhost: no web app in {web} (bun run build in we
 var logFile = new StreamWriter(Path.Combine(server, "devhost.log"), append: true) { AutoFlush = true };
 var log = new ConsoleLog(logFile);
 var components = FirstPartyComponents.All(); // the mod's own component list (auth, identity, ACME, branding, ops, lane C, setup)
+IReadOnlyList<string> launcherFolders = launcherAssets is null ? [] : [launcherAssets];
+components = [.. components.Select(c => c is Kilnwarden.Static.MapAssetsComponent ? new Kilnwarden.Static.MapAssetsComponent(() => launcherFolders) : c)];
 if (probeVia is { } via)
 {
     var (viaHost, viaPort) = (via[..via.LastIndexOf(':')], int.Parse(via[(via.LastIndexOf(':') + 1)..]));

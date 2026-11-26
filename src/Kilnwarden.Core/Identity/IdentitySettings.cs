@@ -69,8 +69,16 @@ public sealed class RoleMapping
 
 public sealed class DiscordSettings
 {
+    /// <summary>The Kiln Discord server: the server the setup wizard's "Sign in with Discord" checks when the owner has
+    /// not named one of their own (0.1.3). Hosted access already asks its owners to be members (the claim pages).</summary>
+    public const string KilnGuild = "1568454645683195976";
+
     /// <summary>Sign-in with Discord through the frostdev.io broker (its Ed25519 key is pinned in the build).</summary>
     public bool Enabled { get; set; }
+
+    /// <summary>Only owner accounts may link and sign in with Discord (0.1.3; the setup wizard's "Sign in with Discord"
+    /// for the owner alone). Off: every account whose user linked their Discord, as before.</summary>
+    public bool OwnerOnly { get; set; }
 
     /// <summary>The broker's origin. Only an origin whose key the build pins can be used.</summary>
     public string Broker { get; set; } = "https://frostdev.io";

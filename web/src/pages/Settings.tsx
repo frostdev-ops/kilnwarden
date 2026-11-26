@@ -14,6 +14,7 @@ import {
   type TlsMode,
 } from "../api/panel";
 import { can } from "../state/session";
+import { MapArtFix, useMapArt } from "./MapArt";
 import { setupApi } from "../setup/wizard";
 
 const setupAgain = () => setupApi(api).again();
@@ -444,7 +445,7 @@ function SignInTab({ edit }: { edit: boolean }) {
               <div className="wa-form wa-form-wide">
                 <dl className="wa-kv">
                   <dt>Steam</dt><dd>{st.steam.active ? <Pill tone="ok">on</Pill> : st.steam.enabled ? <Pill tone="warn">switched on, not working</Pill> : <Pill tone="idle">off</Pill>}</dd>
-                  <dt>Discord</dt><dd>{st.discord.active ? <Pill tone="ok">on</Pill> : st.discord.enabled ? <Pill tone="warn">switched on, not working</Pill> : <Pill tone="idle">off</Pill>}</dd>
+                  <dt>Discord</dt><dd>{st.discord.active ? <Pill tone="ok">{st.discord.ownerOnly ? "on, owners only" : "on"}</Pill> : st.discord.enabled ? <Pill tone="warn">switched on, not working</Pill> : <Pill tone="idle">off</Pill>}</dd>
                   {st.discord.enabled && <><dt>Discord server</dt><dd className="k-mono">{st.discord.guildId || "not set"}</dd></>}
                   <dt>This panel's id</dt><dd><Copyable text={st.panelId} name="the panel's id" /></dd>
                 </dl>
@@ -469,6 +470,8 @@ function SignInTab({ edit }: { edit: boolean }) {
               hint="Through the frostdev.io broker, which tells the panel the user's roles on your Discord server." />
             {v.discord.enabled && (
               <div className="wa-sections">
+                <Toggle label="Owners only" checked={!!v.discord.ownerOnly} onChange={(ownerOnly) => identity.set({ discord: { ...v.discord, ownerOnly } })}
+                  hint="Only owner accounts may link Discord and use it to sign in (the setup wizard turns this on for you). Off: everyone with an account here who links their Discord." />
                 <div className="wa-form-grid">
                   <TextField label="Discord server (guild) id" value={v.discord.guildId} onChange={(guildId) => identity.set({ discord: { ...v.discord, guildId: guildId.trim() } })} mono inputMode="numeric"
                     hint="Right-click the server in Discord (developer mode on) and copy its id." />
@@ -839,7 +842,7 @@ function ModulesTab() {
 // ------------------------------------------------------------------------------------------------ map art
 
 function MapArtTab() {
-  const q = useQuery({ queryKey: ["map-assets"], queryFn: panel.mapAssets });
+  const q = useMapArt();
   return (
     <Card title="Map art" sub="The terrain tiles behind the Map page.">
       {q.isError ? <LoadError what="The map art's status" error={q.error} retry={() => void q.refetch()} />
@@ -852,12 +855,8 @@ function MapArtTab() {
         ) : (
           <div className="wa-form wa-form-wide">
             <div className="wa-row"><Pill tone="idle">not on the server</Pill><span>The map shows the live overlays (players, zones) on a plain background.</span></div>
-            <p className="wa-p">The terrain art is the game's own, so the panel never ships it. To add it:</p>
-            <ol className="wa-list">
-              <li>In the Kiln Launcher, open Settings, then Game art. It makes an <span className="k-mono">admin-assets</span> folder from your copy of the game.</li>
-              <li>Copy that folder's contents (its <span className="k-mono">map</span> and <span className="k-mono">data</span> folders) into <span className="k-mono">{q.data.folder}</span> in the server's folder.</li>
-              <li>Reload the Map page. No restart is needed.</li>
-            </ol>
+            <p className="wa-p">The terrain art is the game's own, so the panel never ships it.</p>
+            <MapArtFix status={q.data} />
           </div>
         )}
     </Card>

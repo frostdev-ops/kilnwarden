@@ -46,6 +46,9 @@ internal sealed class SetupOptions
 {
     public SelfProbe? Probe { get; init; }
     public TimeSpan? ProbeEvery { get; init; }
+
+    /// <summary>The Discord broker's reachability check (0.1.3): null when it answers, else what went wrong.</summary>
+    public Func<string, CancellationToken, Task<string?>>? BrokerCheck { get; init; }
 }
 
 /// <summary>One line of the setup checklist: <see cref="State"/> is "done", "working" (it is happening by itself),
@@ -56,7 +59,8 @@ public sealed record SetupStep(string Id, string State, SetupProblem? Problem = 
 public sealed record SetupProblem(string Title, string Fix, string? Detail = null);
 
 /// <summary>The setup wizard (0.1.2): the panel's /api/setup (the owner's wizard after the account exists: how to open
-/// the panel, hosted access, an own address, the launcher, Discord sign-in, done) and the server console's
+/// the panel, hosted access, an own address, the launcher, Discord sign-in, done; 0.1.3 adds the owner's own Discord
+/// sign-in, then mods and the dashboard, which use the Mods page's and the overview's own routes) and the server console's
 /// <c>kilnwarden setup</c>, <c>kilnwarden setup hosted &lt;name&gt;</c> and <c>kilnwarden status</c>. It writes the
 /// settings the old manual setup asked for by hand (relay.json, settings.json tls, acme.json DNS-01) and watches each
 /// step until the panel really answers at its address.</summary>
@@ -229,7 +233,33 @@ public sealed class SetupComponent : IWebAdminComponent
             Audit(ctx, (WebPrincipal)ctx.User!, "setup.own", new JsonObject { ["host"] = host, ["port"] = port, ["challenge"] = challenge });
             return ValueTask.FromResult(HttpResponse.Json(new JsonObject { ["ok"] = true }));
         }, 1024);
-        // Discord sign-in for the other admins (owner, recent proof)
+        // 0.1.3: Discord sign-in for the owner. Switches Discord sign-in on for the owner alone (discord.ownerOnly) when it
+        // is off, checking the server the owner named or else the Kiln Discord; the link itself is the usual one
+        // (/api/identity/start with intent link, back "setup": recent proof, the broker's pins, state and nonce, one
+        // account per Discord user). First checks that the broker answers, unless the owner goes on anyway.
+        m.MapPost("/discord/me", RouteAccess.Requires(CoreComponent.SettingsEdit), async ctx =>
+        {
+            var p0 = Owner(ctx);
+            var anyway = ctx.ReadJson<JsonObject>()["anyway"]?.GetValue<bool>() == true;
+            var store = _b.Services.TryGet<SettingsStore<IdentitySettings>>() ?? throw new HttpError(409, "Discord sign-in is not available in this build.");
+            var id = _b.Services.TryGet<IdentityService>() ?? throw new HttpError(409, "Discord sign-in is not available in this build.");
+            var broker = store.Current.Discord.Broker;
+            if (!id.Discord.HasKeyFor(broker)) throw new HttpError(409, "Discord sign-in is not available in this build.");
+            if (!anyway && await BrokerCheck(broker, ctx.Aborted).ConfigureAwait(false) is { } problem)
+                return HttpResponse.Error(503, "broker_unreachable", problem);
+            var s = Copy(store.Current);
+            if (!s.Discord.Enabled)
+            {
+                s.Discord.Enabled = true;
+                s.Discord.OwnerOnly = true;
+                if (!IdentitySettings.SnowflakeRe().IsMatch(s.Discord.GuildId ?? "")) s.Discord.GuildId = DiscordSettings.KilnGuild;
+                try { store.Save(s); }
+                catch (ArgumentException e) { throw new HttpError(422, e.Message); }
+            }
+            Audit(ctx, p0, "setup.discord.me", new JsonObject { ["guildId"] = s.Discord.GuildId, ["ownerOnly"] = s.Discord.OwnerOnly });
+            return HttpResponse.Json(new JsonObject { ["ok"] = true, ["guildId"] = s.Discord.GuildId, ["ownerOnly"] = s.Discord.OwnerOnly });
+        }, 1024);
+        // Discord sign-in for the other admins (owner, recent proof): their Discord server; everyone who links may sign in
         m.MapPost("/discord", RouteAccess.Requires(CoreComponent.SettingsEdit), ctx =>
         {
             var guild = (ctx.ReadJson<JsonObject>()["guildId"]?.GetValue<string>() ?? "").Trim();
@@ -237,12 +267,42 @@ public sealed class SetupComponent : IWebAdminComponent
             var store = _b.Services.TryGet<SettingsStore<IdentitySettings>>() ?? throw new HttpError(409, "Discord sign-in is not available in this build.");
             var s = Copy(store.Current);
             s.Discord.Enabled = true;
+            s.Discord.OwnerOnly = false;
             s.Discord.GuildId = guild;
             try { store.Save(s); }
             catch (ArgumentException e) { throw new HttpError(422, e.Message); }
             Audit(ctx, (WebPrincipal)ctx.User!, "setup.discord", new JsonObject { ["guildId"] = guild });
             return ValueTask.FromResult(HttpResponse.Json(new JsonObject { ["ok"] = true }));
         }, 1024);
+    }
+
+    private Task<string?> BrokerCheck(string broker, CancellationToken ct) => (_o.BrokerCheck ?? CheckBrokerAsync)(broker, ct);
+
+    /// <summary>GET {broker}/kiln/auth/discord/health (the broker's own health page): null when it answers 200 within a
+    /// few seconds, else what happened, for "Details".</summary>
+    internal static async Task<string?> CheckBrokerAsync(string broker, CancellationToken ct)
+    {
+        using var http = new HttpMessageInvoker(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false, UseCookies = false, UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(6), MaxResponseHeadersLength = 16,
+        });
+        using var t = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        t.CancelAfter(TimeSpan.FromSeconds(8));
+        var url = $"{broker.TrimEnd('/')}/kiln/auth/discord/health";
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            using var res = await http.SendAsync(req, t.Token).ConfigureAwait(false);
+            return res.StatusCode == HttpStatusCode.OK ? null : $"{url} answered {(int)res.StatusCode}";
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return $"{url} did not answer within 8 seconds";
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or System.Security.Authentication.AuthenticationException)
+        {
+            return $"{url}: {e.Message}";
+        }
     }
 
     private static WebPrincipal Owner(RequestContext ctx) =>
@@ -526,6 +586,8 @@ public sealed class SetupComponent : IWebAdminComponent
             o["discord"] = new JsonObject
             {
                 ["enabled"] = id.Settings.Discord.Enabled, ["guildId"] = id.Settings.Discord.GuildId, ["available"] = id.Discord.HasKeyFor(id.Settings.Discord.Broker),
+                ["ownerOnly"] = id.Settings.Discord.OwnerOnly, ["kilnGuild"] = id.Settings.Discord.GuildId == DiscordSettings.KilnGuild,
+                ["linked"] = ctx.User is WebPrincipal me && me.Account.Links.ContainsKey("discord"),
             };
         return o;
     }

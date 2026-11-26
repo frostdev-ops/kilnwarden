@@ -60,7 +60,7 @@ export interface RoleMapping { from: string; role: string }
 export interface IdentityFile {
   format: number;
   steam: { enabled: boolean; roleMap?: RoleMapping[] };
-  discord: { enabled: boolean; broker: string; guildId: string; allowedRoles: string[]; roleMap?: RoleMapping[] };
+  discord: { enabled: boolean; broker: string; guildId: string; allowedRoles: string[]; roleMap?: RoleMapping[]; ownerOnly?: boolean };
 }
 export type AcmeChallenge = "http-01" | "tls-alpn-01" | "dns-01";
 export interface AcmeFile {
@@ -124,9 +124,14 @@ export function scheduledText(host: string, s: RelayScheduled, at: string): stri
 export interface IdentityStatus {
   panelId: string;
   steam: { enabled: boolean; active: boolean };
-  discord: { enabled: boolean; active: boolean; broker: string; keyPinned: boolean; guildId: string; allowedRoles: number | string[] };
+  discord: { enabled: boolean; active: boolean; broker: string; keyPinned: boolean; guildId: string; allowedRoles: number | string[]; ownerOnly?: boolean };
 }
-export interface MapAssetsStatus { present: boolean; folder: string }
+/** The map art: whether the server has it, the folder, whether the Kiln Launcher's own copy is on this computer, and
+ * the progress of copying that (0.1.3). */
+export interface MapAssetsStatus {
+  present: boolean; folder: string; launcher?: boolean;
+  copy?: { state: "idle" | "copying" | "done" | "failed"; files: number; bytes: number; error: string | null };
+}
 /** A module with its switch (GET /api/core/modules/switches: every module, on or off). */
 export interface ModuleSwitch { id: string; title: string; enabled: boolean; canDisable: boolean | null; description?: string | null }
 
@@ -161,6 +166,7 @@ export function panelEndpoints(api: Api) {
     relayUndo: () => api.post<{ undone: true; host: string }>("/api/core/relay/move/undo"),
     identityStatus: () => api.get<IdentityStatus>("/api/identity/status"),
     mapAssets: () => api.get<MapAssetsStatus>("/api/core/map-assets-status"),
+    copyMapAssets: () => api.post<{ started: true }>("/api/core/map-assets/copy"),
 
     uploadBrandImage: (kind: "logo" | "favicon", file: Blob, type: string) => api.raw<{ ok: true; file: string }>("POST", `/api/core/branding/${kind}`, file, type),
     removeBrandImage: (kind: "logo" | "favicon") => api.del<void>(`/api/core/branding/${kind}`),
@@ -201,6 +207,20 @@ export function move(order: string[], key: string, dir: -1 | 1): string[] {
   [next[i], next[j]] = [next[j], next[i]];
   return next;
 }
+
+/** The whole layout as the editor shows it (0.1.3): every card in its saved place, hidden ones too, then new cards in
+ * their default order; `hidden` only names cards that are there. Visible = order minus hidden, as `arrange` gives. */
+export function layoutOf(available: string[], saved: DashboardLayout | undefined): DashboardLayout {
+  const { visible, hidden } = arrange(available, saved);
+  const all = new Set([...visible, ...hidden]);
+  const order: string[] = [];
+  for (const k of [...(saved?.order ?? []), ...available]) if (all.has(k) && !order.includes(k)) order.push(k);
+  return { order, hidden };
+}
+
+/** True when the layout is the default one: every card, in the default order, none hidden. */
+export const isDefaultLayout = (available: string[], l: DashboardLayout) =>
+  l.hidden.length === 0 && l.order.length === available.length && l.order.every((k, i) => k === available[i]);
 
 /** The dashboard's cards in the saved order: saved keys first (those still there), then the rest in their default order. */
 export function arrange(available: string[], saved: DashboardLayout | undefined): { visible: string[]; hidden: string[] } {

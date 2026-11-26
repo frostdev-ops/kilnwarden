@@ -99,7 +99,11 @@ The link opens the setup wizard, one question per page:
 3. **Hosted access:** pick a name, press **Claim with Discord** (you need to be in the
    [Kiln Discord](https://discord.gg/7pjr8SMTfU)), and watch the checklist: Connected, Claimed, Secure, Ready. It takes
    a minute or two. When a step fails, the page says why and what to do.
-4. Optionally, Discord sign-in for your helpers, then the address to bookmark.
+4. Optional, each with **Skip**: **Sign in with Discord** (one button links your own Discord; your password keeps
+   working), Discord sign-in for your helpers, **Add mods to your server** (upload a mod's zip or paste a link, checked
+   as on the Mods page, installed at the next restart), and **Customize your dashboard** (drag the cards into order,
+   switch off what you don't need).
+5. The end lists what was set up and what was skipped, with where to change each later, and the address to bookmark.
 
 The wizard comes back to where you were after a restart, and **Panel settings > Run the setup again** starts it over.
 The **Kiln Launcher**'s **Open web panel** (Kiln 0.2.0-dev.31.14 or newer) opens the wizard too, signed in.
@@ -257,8 +261,10 @@ listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt):
 - React, TanStack Query and Virtual, React Router, Zustand, Lucide icons and qrcode-generator;
 - the Alegreya Sans, Grenze Gotisch and Inconsolata fonts (SIL Open Font License).
 
-The map's terrain is the game's own art, so it isn't in the zip. Copy the Kiln Launcher's game art into
-`kiln/data/kilnwarden/map-assets/` to see it. Players, markers and zones show without it.
+The map's terrain is the game's own art, so it isn't in the zip. When the Kiln Launcher runs on the server's own
+computer and has made its game art, the Map page's **Copy it from the Kiln Launcher** button copies it into
+`kiln/data/kilnwarden/map-assets/`. Elsewhere, copy the launcher's `admin-assets` folder's `map` and `data` there by
+hand. Players, markers and zones show without it.
 
 Made by Frostdev. Kilnwarden is unofficial and not affiliated with or endorsed by Keen Games. kiln.nexus is frostdev's
 own domain and has no affiliation with Nexus Mods (nexusmods.com).

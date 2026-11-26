@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.3 (2026-11-26)
+
+The setup wizard, polished: Discord sign-in for you, then mods and your dashboard. The Map page fills the screen and
+says plainly when it has no map art.
+
+### Setup
+- **Sign in with Discord** is about you first: one button links your own Discord, and from then on **Sign in with
+  Discord** works for you; your password keeps working. It switches Discord sign-in on for owners only, checking the
+  Discord server you named, or else the Kiln Discord. If Discord sign-in (frostdev.io) isn't answering, the page says
+  so, nothing changes, and you can skip. The link is the panel's usual one: it asks you to confirm it's you, only the
+  broker's built-in keys are trusted, and a Discord account already linked to someone else is refused.
+- Then, optionally, **let others sign in with Discord too**: your Discord server's ID, as before.
+- **Add mods to your server** (optional): what is installed, then upload a mod's zip or paste a link with its SHA-256.
+  It is the Mods page's own check (allowed sources, the SHA-256, signatures) and installs at the next restart, with
+  **Restart now** where the panel can restart the server.
+- **Customize your dashboard** (optional): your overview's cards as a live preview; drag them into order, switch off
+  what you don't need, or **Use the default**.
+- Every page has **Back**, and the optional ones **Skip**, in the same place; the dots count the pages there are. The
+  end lists what was set up and what was skipped, each with where to change it later. A restart comes back to the same
+  page, the new ones too.
+
+### The panel
+- **Overview > Customize** is drag and drop now, the same as the wizard's: a card's handle drags it with a mouse or a
+  finger, or with the keyboard (Space picks it up, the arrow keys move it, Space drops it, Escape puts it back), and
+  screen readers hear each move. A switched-off card stays in its place, folded.
+- **The Map page** fills the panel's height whatever its side panel shows (Markers, Find & filter, Live; before, the map
+  grew and shrank with them), the side panel scrolls on its own, and on a phone it sits above the map instead of
+  squeezing it.
+- **No map art:** the Map page says so plainly, never "Preparing map art…". When the Kiln Launcher on the same computer
+  has made its game art, **Copy it from the Kiln Launcher** copies it in one click (only from the launcher's own folder);
+  otherwise the steps are behind **How to add it**.
+- **Panel settings > Sign-in** shows and switches **Owners only** for Discord sign-in. With it on, a panel role mapped
+  from Discord roles counts for owners only, and a helper's Discord link shows as switched off.
+- A map art copy that fails says so in plain words (the server's log has the details), and a copy cut short by a crash
+  leaves nothing behind after the next start.
+
 ## 0.1.2 (2026-11-26)
 
 Setting up is now a step-by-step wizard, one question per page, and nothing has to be edited by hand.
